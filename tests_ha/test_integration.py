@@ -61,3 +61,17 @@ async def test_entities_events_services(hass: HomeAssistant, emulator):
     assert emulator.state.controls[-1] == (1, 1, 1, 5, 0)
 
     await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_counts_right_after_boot(hass: HomeAssistant, emulator, monkeypatch):
+    """Counters must be read on the first poll even when the host booted < 10 min ago."""
+    import custom_components.zkaccess_native.coordinator as coordinator
+
+    monkeypatch.setattr(coordinator.time, "monotonic", lambda: 42.0)
+    entry = MockConfigEntry(domain=DOMAIN, unique_id="EMU0000000001", title="Front door",
+                            data={CONF_HOST: "127.0.0.1", CONF_PORT: emulator.port, CONF_PASSWORD: ""})
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert hass.states.get("sensor.front_door_users").state == "0"
+    await hass.config_entries.async_unload(entry.entry_id)

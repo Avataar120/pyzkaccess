@@ -42,7 +42,7 @@ class ZKCoordinator(DataUpdateCoordinator[ZKData]):
         self.client = ZKAccess(entry.data[CONF_HOST], entry.data.get(CONF_PORT, 4370),
                                entry.data.get(CONF_PASSWORD, ""))
         self.info: Optional[DeviceInfo] = None
-        self._counted_at = 0.0
+        self._counted_at: Optional[float] = None  # None = count at the next poll
         self._counts: tuple[Optional[int], Optional[int]] = (None, None)
 
     # Runs in the executor ---------------------------------------------------
@@ -56,7 +56,7 @@ class ZKCoordinator(DataUpdateCoordinator[ZKData]):
         if not self.client.connected:
             self._connect()
         records = self.client.poll()
-        if time.monotonic() - self._counted_at > COUNT_REFRESH_SECONDS:
+        if self._counted_at is None or time.monotonic() - self._counted_at > COUNT_REFRESH_SECONDS:
             tables = self.client.tables()
             self._counts = (self.client.count("user") if "user" in tables else None,
                             self.client.count("templatev10") if "templatev10" in tables else None)
@@ -67,7 +67,7 @@ class ZKCoordinator(DataUpdateCoordinator[ZKData]):
                       users=self._counts[0], templates=self._counts[1])
 
     def refresh_counts_soon(self) -> None:
-        self._counted_at = 0.0
+        self._counted_at = None
 
     # Event loop -------------------------------------------------------------
     async def _async_update_data(self) -> ZKData:

@@ -72,7 +72,7 @@ If you try another model, please open an issue with the output of `zkaccess info
 pip install pyzkaccess-native
 ```
 
-Python 3.9 or newer, no other dependency.
+Python 3.10 or newer, no other dependency.
 
 ## Quick start
 
