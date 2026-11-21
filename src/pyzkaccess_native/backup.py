@@ -47,7 +47,8 @@ def backup(dev: ZKAccess, tables: Optional[Iterable[str]] = None,
 
 
 def save(snapshot: Dict[str, Any], path: Union[str, Path]) -> None:
-    Path(path).write_text(json.dumps(snapshot, indent=1, ensure_ascii=False), encoding="utf-8")
+    # ensure_ascii keeps undecodable bytes of string fields (surrogate escapes) intact.
+    Path(path).write_text(json.dumps(snapshot, indent=1), encoding="utf-8")
 
 
 def load(path: Union[str, Path]) -> Dict[str, Any]:

@@ -107,3 +107,11 @@ def test_reconnect_after_close(emu):
     client.connect()
     assert client.count("user") == 0
     client.disconnect()
+
+
+def test_backup_file_keeps_raw_bytes(dev, tmp_path):
+    dev.write_records("user", [{"Pin": 7, "Name": b"\xe9t\xe9".decode("utf-8", "surrogateescape")}])
+    backup.save(backup.backup(dev), tmp_path / "b.json")
+    dev.delete_user(7)
+    backup.restore(dev, backup.load(tmp_path / "b.json"))
+    assert dev.get_user(7).name.encode("utf-8", "surrogateescape") == b"\xe9t\xe9"
