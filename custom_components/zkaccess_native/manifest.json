@@ -1,6 +1,7 @@
 {
   "domain": "zkaccess_native",
   "name": "ZKAccess Native",
+  "categories": ["security_safety.locks_access"],
   "codeowners": ["@Avataar120"],
   "config_flow": true,
   "documentation": "https://github.com/Avataar120/pyzkaccess#home-assistant-integration",
