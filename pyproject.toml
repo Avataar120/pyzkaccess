@@ -1,0 +1,50 @@
+[build-system]
+requires = ["hatchling>=1.21"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pyzkaccess-native"
+dynamic = ["version"]
+description = "Pure-Python, cross-platform client for ZKTeco PullSDK / ZKAccess access-control devices (C3, inBio, MA500...) - no DLL required"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.9"
+authors = [{ name = "Avataar120" }]
+keywords = ["zkteco", "zkaccess", "pullsdk", "c3", "inbio", "ma500", "access-control",
+            "fingerprint", "home-assistant"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Topic :: Home Automation",
+  "Topic :: Security",
+  "Topic :: System :: Hardware",
+  "Typing :: Typed",
+]
+dependencies = []
+
+[project.optional-dependencies]
+test = ["pytest>=7"]
+
+[project.urls]
+Homepage = "https://github.com/Avataar120/pyzkaccess"
+Documentation = "https://github.com/Avataar120/pyzkaccess#readme"
+Issues = "https://github.com/Avataar120/pyzkaccess/issues"
+Changelog = "https://github.com/Avataar120/pyzkaccess/blob/main/CHANGELOG.md"
+
+[project.scripts]
+zkaccess = "pyzkaccess_native.cli:main"
+
+[tool.hatch.version]
+path = "src/pyzkaccess_native/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pyzkaccess_native"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src", "tests", "docs", "README.md", "LICENSE", "CHANGELOG.md"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

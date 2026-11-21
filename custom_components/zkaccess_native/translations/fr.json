@@ -1,0 +1,207 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connexion à un appareil ZKTeco",
+        "description": "Appareil PullSDK / ZKAccess (C3, inBio, MA500...) joignable en TCP. Fermez d'abord ZKAccess et tout autre programme connecté : l'appareil n'accepte qu'une session.",
+        "data": {
+          "host": "Hôte",
+          "port": "Port",
+          "password": "Mot de passe de communication"
+        },
+        "data_description": {
+          "host": "Adresse IP de l'appareil.",
+          "password": "Laisser vide si aucun mot de passe de communication."
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Connexion impossible.",
+      "invalid_auth": "Mot de passe de communication incorrect."
+    },
+    "abort": {
+      "already_configured": "Cet appareil est déjà configuré."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Options",
+        "data": {
+          "poll_interval": "Intervalle d'interrogation du journal temps réel (s)",
+          "open_seconds": "Durée d'ouverture de la porte (s)",
+          "sync_clock": "Mettre l'appareil à l'heure à la connexion"
+        }
+      }
+    }
+  },
+  "entity": {
+    "event": {
+      "access": {
+        "name": "Accès",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "granted": "Autorisé",
+              "denied": "Refusé",
+              "other": "Autre"
+            }
+          }
+        }
+      }
+    },
+    "binary_sensor": {
+      "door": {
+        "name": "Porte {door}"
+      },
+      "alarm": {
+        "name": "Alarme porte {door}"
+      }
+    },
+    "sensor": {
+      "users": {
+        "name": "Utilisateurs"
+      },
+      "templates": {
+        "name": "Empreintes"
+      },
+      "last_user": {
+        "name": "Dernier utilisateur"
+      }
+    },
+    "button": {
+      "open_door": {
+        "name": "Ouvrir la porte {door}"
+      },
+      "sync_clock": {
+        "name": "Mettre à l'heure"
+      }
+    }
+  },
+  "services": {
+    "set_user": {
+      "name": "Créer ou modifier un utilisateur",
+      "description": "Crée l'utilisateur ou modifie les champs indiqués ; les autres sont conservés.",
+      "fields": {
+        "device_id": {
+          "name": "Device",
+          "description": "The ZKAccess device."
+        },
+        "pin": {
+          "name": "PIN",
+          "description": "User PIN (user number)."
+        },
+        "name": {
+          "name": "Name",
+          "description": "Display name."
+        },
+        "card": {
+          "name": "Card number",
+          "description": "RFID card number."
+        },
+        "password": {
+          "name": "Password",
+          "description": "Keypad password (digits)."
+        }
+      }
+    },
+    "delete_user": {
+      "name": "Supprimer un utilisateur",
+      "description": "Supprime l'utilisateur, ses empreintes et ses autorisations.",
+      "fields": {
+        "device_id": {
+          "name": "Device",
+          "description": "The ZKAccess device."
+        },
+        "pin": {
+          "name": "PIN",
+          "description": "User PIN (user number)."
+        }
+      }
+    },
+    "grant": {
+      "name": "Autoriser l'accès",
+      "description": "Autorise un utilisateur à ouvrir des portes pendant une plage horaire.",
+      "fields": {
+        "device_id": {
+          "name": "Device",
+          "description": "The ZKAccess device."
+        },
+        "pin": {
+          "name": "PIN",
+          "description": "User PIN (user number)."
+        },
+        "timezone": {
+          "name": "Time zone",
+          "description": "Time zone id (1 = always on factory devices)."
+        },
+        "doors": {
+          "name": "Doors",
+          "description": "Door bit mask: 1 = door 1, 2 = door 2, 4 = door 3, 8 = door 4."
+        }
+      }
+    },
+    "revoke": {
+      "name": "Retirer l'accès",
+      "description": "Supprime toutes les autorisations d'un utilisateur.",
+      "fields": {
+        "device_id": {
+          "name": "Device",
+          "description": "The ZKAccess device."
+        },
+        "pin": {
+          "name": "PIN",
+          "description": "User PIN (user number)."
+        }
+      }
+    },
+    "open_door": {
+      "name": "Ouvrir la porte",
+      "description": "Active le relais de gâche quelques secondes.",
+      "fields": {
+        "device_id": {
+          "name": "Device",
+          "description": "The ZKAccess device."
+        },
+        "door": {
+          "name": "Door",
+          "description": "Door number."
+        },
+        "seconds": {
+          "name": "Seconds",
+          "description": "Duration (1-254)."
+        }
+      }
+    },
+    "sync_clock": {
+      "name": "Mettre à l'heure",
+      "description": "Règle l'horloge de l'appareil sur l'heure locale de Home Assistant.",
+      "fields": {
+        "device_id": {
+          "name": "Device",
+          "description": "The ZKAccess device."
+        }
+      }
+    },
+    "list_users": {
+      "name": "Lister les utilisateurs",
+      "description": "Renvoie les utilisateurs enregistrés dans l'appareil.",
+      "fields": {
+        "device_id": {
+          "name": "Device",
+          "description": "The ZKAccess device."
+        }
+      }
+    },
+    "backup": {
+      "name": "Sauvegarde",
+      "description": "Enregistre utilisateurs, empreintes et autorisations dans un fichier JSON du dossier zkaccess_native de la configuration.",
+      "fields": {
+        "device_id": {
+          "name": "Device",
+          "description": "The ZKAccess device."
+        }
+      }
+    }
+  }
+}

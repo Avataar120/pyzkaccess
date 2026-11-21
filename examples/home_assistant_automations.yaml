@@ -1,0 +1,38 @@
+# Example automations for the ZKAccess Native Home Assistant integration.
+# Replace event.front_door_access / notify targets with your own entities.
+
+- alias: "Front door - log every access"
+  triggers:
+    - trigger: event
+      event_type: zkaccess_native_access
+  actions:
+    - action: logbook.log
+      data:
+        name: "Front door"
+        message: >-
+          {{ trigger.event.data.event_name }} - PIN {{ trigger.event.data.pin }}
+          (door {{ trigger.event.data.door }})
+
+- alias: "Front door - disarm the alarm for granted users"
+  triggers:
+    - trigger: state
+      entity_id: event.front_door_access
+      to: ~
+  conditions:
+    - "{{ trigger.to_state.attributes.event_type == 'granted' }}"
+  actions:
+    - action: alarm_control_panel.alarm_disarm
+      target:
+        entity_id: alarm_control_panel.home
+
+- alias: "Front door - nightly clock sync and backup"
+  triggers:
+    - trigger: time
+      at: "04:00:00"
+  actions:
+    - action: zkaccess_native.sync_clock
+      data:
+        device_id: YOUR_DEVICE_ID
+    - action: zkaccess_native.backup
+      data:
+        device_id: YOUR_DEVICE_ID

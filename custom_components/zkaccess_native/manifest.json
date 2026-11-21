@@ -1,0 +1,13 @@
+{
+  "domain": "zkaccess_native",
+  "name": "ZKAccess Native",
+  "codeowners": ["@Avataar120"],
+  "config_flow": true,
+  "documentation": "https://github.com/Avataar120/pyzkaccess#home-assistant-integration",
+  "integration_type": "device",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/Avataar120/pyzkaccess/issues",
+  "loggers": ["pyzkaccess_native"],
+  "requirements": ["pyzkaccess-native==0.1.0"],
+  "version": "0.1.0"
+}

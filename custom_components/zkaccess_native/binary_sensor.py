@@ -1,0 +1,55 @@
+"""Door sensor and alarm binary sensors (one pair per door)."""
+from __future__ import annotations
+
+from homeassistant.components.binary_sensor import BinarySensorDeviceClass, BinarySensorEntity
+from homeassistant.const import EntityCategory
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
+
+from . import ZKConfigEntry
+from .entity import ZKEntity
+
+
+async def async_setup_entry(hass: HomeAssistant, entry: ZKConfigEntry,
+                            add: AddEntitiesCallback) -> None:
+    coord = entry.runtime_data
+    doors = (coord.info.lock_count if coord.info else None) or 1
+    entities = []
+    for door in range(1, doors + 1):
+        entities += [ZKDoorSensor(coord, door), ZKAlarm(coord, door)]
+    add(entities)
+
+
+class ZKDoorSensor(ZKEntity, BinarySensorEntity):
+    """State of the door contact wired to the device (unknown when none is configured)."""
+
+    _attr_device_class = BinarySensorDeviceClass.DOOR
+    _attr_translation_key = "door"
+
+    def __init__(self, coordinator, door: int) -> None:
+        super().__init__(coordinator, f"door_{door}")
+        self.door = door
+        self._attr_translation_placeholders = {"door": str(door)}
+
+    @property
+    def is_on(self) -> bool | None:
+        status = self.coordinator.data.status if self.coordinator.data else None
+        return status.door_open(self.door) if status else None
+
+
+class ZKAlarm(ZKEntity, BinarySensorEntity):
+    _attr_device_class = BinarySensorDeviceClass.PROBLEM
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_translation_key = "alarm"
+
+    def __init__(self, coordinator, door: int) -> None:
+        super().__init__(coordinator, f"alarm_{door}")
+        self.door = door
+        self._attr_translation_placeholders = {"door": str(door)}
+
+    @property
+    def is_on(self) -> bool | None:
+        status = self.coordinator.data.status if self.coordinator.data else None
+        if status is None:
+            return None
+        return status.alarm(self.door) or status.open_timeout(self.door)

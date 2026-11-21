@@ -1,0 +1,40 @@
+name: Publish to PyPI
+
+# Runs when a GitHub release is published. Uses PyPI "trusted publishing":
+# no token is stored in the repository (see README "Releasing").
+on:
+  release:
+    types: [published]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Check that the tag matches the versions
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          grep -q "__version__ = \"$TAG\"" src/pyzkaccess_native/__init__.py
+          grep -q "\"version\": \"$TAG\"" custom_components/zkaccess_native/manifest.json
+          grep -q "pyzkaccess-native==$TAG" custom_components/zkaccess_native/manifest.json
+      - run: pip install build && python -m build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1

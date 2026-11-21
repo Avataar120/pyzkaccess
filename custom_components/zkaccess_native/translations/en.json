@@ -1,0 +1,207 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to a ZKTeco device",
+        "description": "PullSDK / ZKAccess device (C3, inBio, MA500...) reachable over TCP. Stop ZKAccess and any other program connected to the device first: it accepts a single session.",
+        "data": {
+          "host": "Host",
+          "port": "Port",
+          "password": "Communication password"
+        },
+        "data_description": {
+          "host": "IP address of the device.",
+          "password": "Leave empty if no communication password is set."
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Cannot connect to the device.",
+      "invalid_auth": "Wrong communication password."
+    },
+    "abort": {
+      "already_configured": "This device is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Options",
+        "data": {
+          "poll_interval": "Real-time log polling interval (s)",
+          "open_seconds": "Door open duration (s)",
+          "sync_clock": "Set the device clock on connection"
+        }
+      }
+    }
+  },
+  "entity": {
+    "event": {
+      "access": {
+        "name": "Access",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "granted": "Granted",
+              "denied": "Denied",
+              "other": "Other"
+            }
+          }
+        }
+      }
+    },
+    "binary_sensor": {
+      "door": {
+        "name": "Door {door}"
+      },
+      "alarm": {
+        "name": "Door {door} alarm"
+      }
+    },
+    "sensor": {
+      "users": {
+        "name": "Users"
+      },
+      "templates": {
+        "name": "Fingerprint templates"
+      },
+      "last_user": {
+        "name": "Last user"
+      }
+    },
+    "button": {
+      "open_door": {
+        "name": "Open door {door}"
+      },
+      "sync_clock": {
+        "name": "Sync clock"
+      }
+    }
+  },
+  "services": {
+    "set_user": {
+      "name": "Create or update a user",
+      "description": "Creates the user or updates the given fields; other fields are kept.",
+      "fields": {
+        "device_id": {
+          "name": "Device",
+          "description": "The ZKAccess device."
+        },
+        "pin": {
+          "name": "PIN",
+          "description": "User PIN (user number)."
+        },
+        "name": {
+          "name": "Name",
+          "description": "Display name."
+        },
+        "card": {
+          "name": "Card number",
+          "description": "RFID card number."
+        },
+        "password": {
+          "name": "Password",
+          "description": "Keypad password (digits)."
+        }
+      }
+    },
+    "delete_user": {
+      "name": "Delete a user",
+      "description": "Deletes a user with its fingerprint templates and door authorizations.",
+      "fields": {
+        "device_id": {
+          "name": "Device",
+          "description": "The ZKAccess device."
+        },
+        "pin": {
+          "name": "PIN",
+          "description": "User PIN (user number)."
+        }
+      }
+    },
+    "grant": {
+      "name": "Grant access",
+      "description": "Allows a user to open doors during a time zone.",
+      "fields": {
+        "device_id": {
+          "name": "Device",
+          "description": "The ZKAccess device."
+        },
+        "pin": {
+          "name": "PIN",
+          "description": "User PIN (user number)."
+        },
+        "timezone": {
+          "name": "Time zone",
+          "description": "Time zone id (1 = always on factory devices)."
+        },
+        "doors": {
+          "name": "Doors",
+          "description": "Door bit mask: 1 = door 1, 2 = door 2, 4 = door 3, 8 = door 4."
+        }
+      }
+    },
+    "revoke": {
+      "name": "Revoke access",
+      "description": "Removes every door authorization of a user.",
+      "fields": {
+        "device_id": {
+          "name": "Device",
+          "description": "The ZKAccess device."
+        },
+        "pin": {
+          "name": "PIN",
+          "description": "User PIN (user number)."
+        }
+      }
+    },
+    "open_door": {
+      "name": "Open door",
+      "description": "Energizes the lock relay for a few seconds.",
+      "fields": {
+        "device_id": {
+          "name": "Device",
+          "description": "The ZKAccess device."
+        },
+        "door": {
+          "name": "Door",
+          "description": "Door number."
+        },
+        "seconds": {
+          "name": "Seconds",
+          "description": "Duration (1-254)."
+        }
+      }
+    },
+    "sync_clock": {
+      "name": "Sync clock",
+      "description": "Sets the device clock to Home Assistant's local time.",
+      "fields": {
+        "device_id": {
+          "name": "Device",
+          "description": "The ZKAccess device."
+        }
+      }
+    },
+    "list_users": {
+      "name": "List users",
+      "description": "Returns the users stored in the device.",
+      "fields": {
+        "device_id": {
+          "name": "Device",
+          "description": "The ZKAccess device."
+        }
+      }
+    },
+    "backup": {
+      "name": "Backup",
+      "description": "Saves users, fingerprint templates and authorizations to a JSON file in the zkaccess_native folder of the configuration directory.",
+      "fields": {
+        "device_id": {
+          "name": "Device",
+          "description": "The ZKAccess device."
+        }
+      }
+    }
+  }
+}

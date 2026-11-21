@@ -1,0 +1,35 @@
+set_user:
+  fields:
+    device_id: &device
+      required: true
+      selector:
+        device:
+          integration: zkaccess_native
+    pin: &pin
+      required: true
+      selector:
+        number: {min: 1, max: 999999999, mode: box}
+    name: {selector: {text: {}}}
+    card: {selector: {number: {min: 0, max: 4294967295, mode: box}}}
+    password: {selector: {text: {type: password}}}
+delete_user:
+  fields: {device_id: *device, pin: *pin}
+grant:
+  fields:
+    device_id: *device
+    pin: *pin
+    timezone: {default: 1, selector: {number: {min: 1, max: 255, mode: box}}}
+    doors: {default: 1, selector: {number: {min: 1, max: 15, mode: box}}}
+revoke:
+  fields: {device_id: *device, pin: *pin}
+open_door:
+  fields:
+    device_id: *device
+    door: {default: 1, selector: {number: {min: 1, max: 4}}}
+    seconds: {default: 5, selector: {number: {min: 1, max: 254, unit_of_measurement: s}}}
+sync_clock:
+  fields: {device_id: *device}
+list_users:
+  fields: {device_id: *device}
+backup:
+  fields: {device_id: *device}
