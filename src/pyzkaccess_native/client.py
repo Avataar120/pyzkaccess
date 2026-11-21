@@ -65,9 +65,10 @@ def _int_or_none(value: Optional[str]) -> Optional[int]:
 class ZKAccess:
     """Synchronous client. One instance holds one TCP session.
 
-    The device accepts a limited number of simultaneous sessions (often a single
-    one): do not run ZKAccess, the official SDK or a second client against the
-    same device at the same time.
+    Some devices accept a second session, but real-time events are delivered to
+    every session and concurrent writes are not coordinated: share one instance
+    per device inside a program, and do not manage a device from ZKAccess at the
+    same time.
 
     All public methods are thread-safe: requests are serialized by an internal lock.
 

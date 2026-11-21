@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Connect to a ZKTeco device",
-        "description": "PullSDK / ZKAccess device (C3, inBio, MA500...) reachable over TCP. Stop ZKAccess and any other program connected to the device first: it accepts a single session.",
+        "description": "PullSDK / ZKAccess device (C3, inBio, MA500...) reachable over TCP. Do not manage the device from ZKAccess at the same time.",
         "data": {
           "host": "Host",
           "port": "Port",

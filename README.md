@@ -58,7 +58,7 @@ protocol.
 
 | Device | Status |
 |---|---|
-| **MA500** (fingerprint + RFID reader), firmware 6.64 | ✅ tested: everything except the control command (`open_door`...), which is still being validated |
+| **MA500** (fingerprint + RFID reader), firmware 6.64 | ✅ tested (reboot and normal-open state excepted) |
 | C3-100 / C3-200 / C3-400 | 🟡 expected to work (same protocol); please report |
 | inBio 160/260/460 | 🟡 expected to work; please report |
 | Push-protocol / "standalone attendance" devices (`pyzk`, port 4370 UDP) | ❌ different protocol |
@@ -111,11 +111,13 @@ dev.disconnect()
 ```
 
 Or, better, `with ZKAccess(...) as dev:`. The client is thread-safe: requests from
-several threads are serialized on the single session.
+several threads are serialized on its session.
 
 > [!IMPORTANT]
-> Devices accept **a single session** in practice. Close ZKAccess (and any other tool)
-> before connecting, and share one `ZKAccess` instance inside your program.
+> Share one `ZKAccess` instance inside your program. A device may accept a second
+> session (the MA500 does), but **real-time events are delivered to every session**, and
+> writes from two programs are not coordinated. Do not manage the same device from
+> ZKAccess and from this library at the same time.
 
 ### Device information, parameters and clock
 
@@ -404,7 +406,8 @@ against each of them, but you should know them:
    (`zkaccess backup device.json`).
 6. ZKAccess does not read door authorizations from the device: syncing its database back
    to the device can leave users without access.
-7. One session at a time: do not run ZKAccess and this library together.
+7. Events are delivered to every open session: if two programs act on events, both will
+   act. Do not manage a device from ZKAccess and this library at the same time.
 
 ## Testing without hardware
 
@@ -435,10 +438,10 @@ device-assigned UIDs, buffered transfers...), but the real device remains the re
 
 | Symptom | Cause / fix |
 |---|---|
-| `cannot connect` / timeout | wrong IP, device on another VLAN without routing, or **another program is connected** (ZKAccess, a second script). |
+| `cannot connect` / timeout | wrong IP, device on another VLAN without routing, firewall, or a firmware that accepts a single session while another program is connected. |
 | `device error -14` | wrong communication password (`ComPwd`). |
 | `device error -13` | command not supported by this firmware. |
-| no event received | events are delivered once: another client may be consuming them. |
+| no event received | check the polling loop is running; time zone / authorization of the user (event 23 = access denied). |
 | `discover()` finds nothing | broadcasts do not cross routers; connect by IP. |
 | clock drifts | call `set_time()` daily (the integration does it on each connection). |
 

@@ -21,8 +21,11 @@ Reference hardware: ZKTeco MA500 (fingerprint + RFID reader, one door), firmware
 
 - TCP, port **4370** by default **[verified]**.
 - Discovery: a UDP broadcast to port **65535** **[assumed on the MA500, documented for C3]**.
-- The device accepts **one session at a time** in practice. ZKAccess, the DLL and this
-  library must not be connected at the same time.
+- The reference device accepted **two simultaneous sessions** **[verified]**. Real-time
+  log events are delivered **to every open session** **[verified]**: two programs polling
+  the same device both see each event (keep that in mind if one of them acts on events).
+  Write operations from two programs at the same time are not coordinated: avoid them.
+- Older firmware may accept only one session [assumed].
 
 ## 2. Frame
 
@@ -74,7 +77,7 @@ The device echoes them back in its reply.
 | `02` | disconnect | none | **[verified]** |
 | `03` | set parameters | text `Name=value,Name2=value2` | **[verified]** |
 | `04` | get parameters | text `Name1,Name2`; unknown names are omitted from the answer | **[verified]** |
-| `05` | control (doors, aux outputs, alarm, reboot) | 5 bytes, see §8 | [assumed on the MA500] |
+| `05` | control (doors, aux outputs, alarm, reboot) | 5 bytes, see §8 | **[verified]** (output, cancel alarm) |
 | `06` | table layout | none; answer = one text line per table | **[verified]** |
 | `07` | write records (`SetDeviceData`) | §5.3 | **[verified]** |
 | `08` | read records (`GetDeviceData`) | §5.2 | **[verified]** |
@@ -231,13 +234,13 @@ The answer is a sequence of 16-byte records **[verified]**:
 A status record is returned on every poll. Each event is returned once; poll often (e.g.
 every 300 ms to 1 s) to get them promptly.
 
-Event codes observed on the reference device: **0** normal open (card), **14** fingerprint
-open, **34** unregistered fingerprint, **255** status. The full list from the PullSDK
+Event codes observed on the reference device: **0** normal open (card), **7** cancel alarm,
+**8** remote opening, **14** fingerprint open, **34** unregistered fingerprint, **255** status. The full list from the PullSDK
 documentation is in `pyzkaccess_native.events.EventType`.
 
 ## 8. Control (`05`)
 
-Five bytes: `operation p1 p2 p3 p4` [assumed on the MA500, documented for C3]:
+Five bytes: `operation p1 p2 p3 p4`; the answer is an empty `C8`:
 
 | Operation | p1 | p2 | p3 |
 |---|---|---|---|
@@ -246,7 +249,14 @@ Five bytes: `operation p1 p2 p3 p4` [assumed on the MA500, documented for C3]:
 | `3` reboot | | | |
 | `4` normal-open state for today | door | `1` enable, `0` disable | |
 
-A remote opening is reported in the real-time log as event 8 (remote opening).
+Verified on the reference device:
+
+| Request | `05` data | Real-time log |
+|---|---|---|
+| open door 1 for 1 s | `01 01 01 01 00` | event **8** (remote opening), PIN 0, door 1, verify mode 200, in/out 2 |
+| cancel alarm | `02 00 00 00 00` | event **7** (cancel alarm), PIN 0, door 0, verify mode 200 |
+
+Reboot and the normal-open state were not tested.
 
 ## 9. Parameters and clock
 

@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Connexion à un appareil ZKTeco",
-        "description": "Appareil PullSDK / ZKAccess (C3, inBio, MA500...) joignable en TCP. Fermez d'abord ZKAccess et tout autre programme connecté : l'appareil n'accepte qu'une session.",
+        "description": "Appareil PullSDK / ZKAccess (C3, inBio, MA500...) joignable en TCP. Ne gérez pas l'appareil depuis ZKAccess en même temps.",
         "data": {
           "host": "Hôte",
           "port": "Port",
