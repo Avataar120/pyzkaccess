@@ -20,5 +20,3 @@ jobs:
       - uses: hacs/action@main
         with:
           category: integration
-          # Remove once the integration logo is merged into home-assistant/brands
-          ignore: brands

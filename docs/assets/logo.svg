@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="8 8 240 240" width="256" height="256">
+  <!-- pyzkaccess-native logo: fingerprint ridges around a keyhole. MIT license. -->
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0d9488"/>
+      <stop offset="1" stop-color="#1e40af"/>
+    </linearGradient>
+  </defs>
+  <rect x="8" y="8" width="240" height="240" rx="52" fill="url(#g)"/>
+  <g fill="none" stroke="#ffffff" stroke-width="12" stroke-linecap="round">
+    <!-- inner ridge, hugging the keyhole -->
+    <path d="M96,164 L96,118 A32,32 0 0 1 160,118 L160,146"/>
+    <!-- middle ridge, broken on the right like a real print -->
+    <path d="M72,190 L72,118 A56,56 0 0 1 172,92"/>
+    <path d="M184,124 L184,176"/>
+    <!-- outer ridge, broken at the top left -->
+    <path d="M48,170 L48,118 A80,80 0 0 1 72,61"/>
+    <path d="M96,45 A80,80 0 0 1 208,118 L208,196"/>
+  </g>
+  <!-- keyhole -->
+  <circle cx="128" cy="118" r="13" fill="#ffffff"/>
+  <path d="M121,124 L135,124 L139,158 L117,158 Z" fill="#ffffff"/>
+</svg>

@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Home Assistant integration logo (shipped in `brand/`, shown from Home Assistant 2026.3).
+
 ## 0.1.0 - 2026-11
 
 First public release.

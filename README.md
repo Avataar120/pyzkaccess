@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Avataar120/pyzkaccess/main/custom_components/zkaccess_native/brand/icon.png" alt="pyzkaccess-native logo" width="128">
+</p>
+
 # pyzkaccess-native
 
 **Talk to ZKTeco access-control devices from any OS, in pure Python. No DLL, no Windows,
