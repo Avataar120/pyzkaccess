@@ -1,8 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.1.1 - 2026-11-22
 
 - Home Assistant integration logo (shipped in `brand/`, shown from Home Assistant 2026.3).
+- Logo in the README.
+- No functional change in the library.
 
 ## 0.1.0 - 2026-11
 

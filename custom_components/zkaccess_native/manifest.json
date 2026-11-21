@@ -9,6 +9,6 @@
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/Avataar120/pyzkaccess/issues",
   "loggers": ["pyzkaccess_native"],
-  "requirements": ["pyzkaccess-native==0.1.0"],
-  "version": "0.1.0"
+  "requirements": ["pyzkaccess-native==0.1.1"],
+  "version": "0.1.1"
 }

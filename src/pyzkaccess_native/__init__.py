@@ -10,7 +10,7 @@ from .events import (AccessEvent, DoorSensor, DoorStatus, EventType, InOutState,
                      event_label)
 from .models import Authorization, Template, User
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 __all__ = [
     "ZKAccess", "DeviceInfo", "discover", "DiscoveredDevice",
