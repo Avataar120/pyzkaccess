@@ -8,7 +8,7 @@
           "networks": "Other ranges to search (optional)"
         },
         "data_description": {
-          "networks": "E.g. 192.168.5.0/24, comma separated (at most /22 each)."
+          "networks": "E.g. 192.168.20.0/24, comma separated (at most /22 each)."
         }
       },
       "select": {
@@ -35,8 +35,8 @@
     "error": {
       "cannot_connect": "Cannot connect to the device.",
       "invalid_auth": "Wrong communication password.",
-      "invalid_network": "Invalid range (e.g. 192.168.5.0/24, at most /22).",
-      "no_devices": "No device found. Add the device's range (e.g. 192.168.5.0/24), or submit again unchanged to enter its address."
+      "invalid_network": "Invalid range (e.g. 192.168.20.0/24, at most /22).",
+      "no_devices": "No device found. Add the device's range (e.g. 192.168.20.0/24), or submit again unchanged to enter its address."
     },
     "abort": {
       "already_configured": "This device is already configured."

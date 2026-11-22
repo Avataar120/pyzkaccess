@@ -69,7 +69,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("discover", help="find devices on the local network (UDP broadcast)")
     sc = sub.add_parser("scan", help="find devices on any subnet: try TCP port 4370 on ranges")
-    sc.add_argument("networks", nargs="+", help="ranges such as 192.168.5.0/24 (at most /22 each)")
+    sc.add_argument("networks", nargs="+", help="ranges such as 192.168.20.0/24 (at most /22 each)")
     sub.add_parser("info", help="device identity and capabilities")
     sub.add_parser("tables", help="list tables and their fields")
 

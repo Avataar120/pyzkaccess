@@ -83,7 +83,7 @@ def _port_open(host: str, port: int, timeout: float) -> bool:
 def scan(networks: Iterable[str], port: int = 4370, password: str = "", timeout: float = 0.6,
          workers: int = 64) -> List[DiscoveredDevice]:
     """Find devices by trying TCP ``port`` on every address of ``networks``
-    (e.g. ``["192.168.5.0/24"]``), then opening a session to read their identity.
+    (e.g. ``["192.168.20.0/24"]``), then opening a session to read their identity.
 
     Unlike :func:`discover`, this crosses routers and VLANs (it is the same TCP port
     as the normal connection). A device that refuses ``password`` is still listed,

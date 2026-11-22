@@ -32,8 +32,8 @@ def search(monkeypatch, emulator):
 async def test_config_flow_search(hass: HomeAssistant, emulator, search):
     result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
     assert result["type"] is FlowResultType.FORM and result["step_id"] == "user"
-    result = await hass.config_entries.flow.async_configure(result["flow_id"], {"networks": "192.168.5.0/24"})
-    assert search == [["192.168.1.0/24", "192.168.5.0/24"]]
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {"networks": "192.168.20.0/24"})
+    assert search == [["192.168.1.0/24", "192.168.20.0/24"]]
     assert result["step_id"] == "select"
     result = await hass.config_entries.flow.async_configure(result["flow_id"], {"device": "127.0.0.1"})
     assert result["step_id"] == "connect"

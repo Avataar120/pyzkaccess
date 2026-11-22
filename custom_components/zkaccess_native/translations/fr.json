@@ -8,7 +8,7 @@
           "networks": "Autres plages à rechercher (facultatif)"
         },
         "data_description": {
-          "networks": "Ex. 192.168.5.0/24, séparées par des virgules (au plus /22 chacune)."
+          "networks": "Ex. 192.168.20.0/24, séparées par des virgules (au plus /22 chacune)."
         }
       },
       "select": {
@@ -35,8 +35,8 @@
     "error": {
       "cannot_connect": "Connexion impossible.",
       "invalid_auth": "Mot de passe de communication incorrect.",
-      "invalid_network": "Plage invalide (ex. 192.168.5.0/24, au plus /22).",
-      "no_devices": "Aucun appareil trouvé. Ajoutez la plage du boîtier (ex. 192.168.5.0/24), ou validez à nouveau sans rien changer pour saisir son adresse."
+      "invalid_network": "Plage invalide (ex. 192.168.20.0/24, au plus /22).",
+      "no_devices": "Aucun appareil trouvé. Ajoutez la plage du boîtier (ex. 192.168.20.0/24), ou validez à nouveau sans rien changer pour saisir son adresse."
     },
     "abort": {
       "already_configured": "Cet appareil est déjà configuré."
