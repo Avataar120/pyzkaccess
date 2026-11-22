@@ -32,7 +32,7 @@ It comes with:
 |---|---|
 | 🐍 **Python library** | `pip install pyzkaccess-native` |
 | 💻 **Command line tool** | `zkaccess --host 192.168.1.201 users` |
-| 🏠 **Home Assistant integration** | installable from HACS, see [below](#home-assistant-integration) |
+| 🏠 **Home Assistant integration** | installable from HACS, with a management page in the sidebar, see [below](#home-assistant-integration) |
 | 🧪 **Device emulator** | test your code without hardware |
 | 📖 **Protocol documentation** | [docs/PROTOCOL.md](docs/PROTOCOL.md) |
 
@@ -277,7 +277,7 @@ zkaccess [--host HOST] [--port 4370] [--password PWD] [-v|-vv] <command>
 | `params NAME... / NAME=VALUE...` | read / write parameters |
 | `time [--set [ISO date]]` | read, or set the clock (default: now) |
 | `users [--json]` | list users |
-| `user-set USERID [--name] [--card] [--user-password]` | create or update a user |
+| `user-set USERID [--name] [--card] [--user-password]` | create or update a user (`--user-password` = keypad code) |
 | `user-delete USERID [--yes]` | delete a user, its templates and authorizations |
 | `grant USERID [--timezone 1] [--doors 1]` / `revoke USERID` | door access |
 | `read TABLE [--where F=V] [--fields a,b] [--json]` | dump any table |
@@ -305,7 +305,9 @@ $ zkaccess events
 
 ## Home Assistant integration
 
-The repository is also a **HACS** custom integration built on the library.
+The repository is also a **HACS** custom integration built on the library. It adds an
+**Access control** page to the sidebar (administrators only) to manage people, fingerprints,
+cards and codes without any YAML.
 
 ### Install
 
@@ -314,67 +316,110 @@ The repository is also a **HACS** custom integration built on the library.
 2. Install **ZKAccess Native** and restart Home Assistant.
 3. **Settings → Devices & services → Add integration → ZKAccess Native**, enter the IP
    address (and the communication password, if any).
+4. Open **Access control** in the sidebar.
 
-### What you get
+### People and action categories
+
+Access events only tell *which UserID* was recognized, never which finger or card. To let one
+person trigger different actions (open the door, arm the alarm, open the garage...), each
+person gets one UserID per **action category**:
+
+```
+UserID = person number (2 digits) followed by the category digit
+person 12 + category 0 (Open)  -> UserID 120
+person 12 + category 3 (Arm)   -> UserID 123
+```
+
+- Category **0 is always "Open"**. Digits 1-9 are free: standard types (Close, Lock,
+  Unlock, Arm, Disarm) or custom names (Garage...), set in **Settings**.
+- Each UserID holds **several fingerprints, one card and one keypad code**. A person can have
+  two fingers that open and a third one that arms the alarm, or one card to open and
+  another one to close.
+- On the keypad, the code is typed after the UserID, so a person can reuse the same code in
+  every category.
+- Each category says whether it **triggers the device relay**. "Open" does; an "Arm" finger
+  usually should not open the door: the device then refuses it, and the integration turns
+  that refusal into an `action` event for Home Assistant.
+- **Second presentation** (per category): presenting the same card or finger again within a
+  few seconds runs a second category *in addition*. Example: badge once to open the gate,
+  twice to open the gate and then lock and arm the house.
+
+Prefer one UserID per person, without categories? Choose **One UserID per person** in
+**Settings → Numbering**.
+
+### The Access control page
+
+| Tab | What you can do |
+|---|---|
+| **People** | list, search, create; per person: a two-hand view of enrolled fingers with their category, move a finger to another category, delete it; cards and codes per category; enable / disable all access (rights are remembered and restored); link to a Home Assistant person; delete. UserIDs that do not follow the numbering (e.g. enrolled on the keypad) are listed as **Unassigned** and can be attached to a person. |
+| **Activity** | live log with names, category, method (fingerprint, card, code, remote) and second presentations; filters; unknown cards can be assigned in one click |
+| **Door** | open / hold open / close the lock relay; door settings written to the device (relay time, door sensor, open-door alarm delay, verification mode, free-passage time zone, relock on close); device clock; cancel alarm |
+| **Settings** | numbering, action categories, second-presentation delay, automatic backups (on every change, nightly, retention), download / restore / import, keypad notifications |
+
+**Enrolling a fingerprint.** Fingerprints are captured by the device itself (there is no
+remote enrollment command). Click a free finger on the hand, pick its category: the page
+shows the exact keys to type on the device keypad (`* #`, admin code, `1`, the UserID, `#`)
+and detects the new fingerprint by itself.
+
+**Learning a card.** Click *Learn a card* and present the card: the device reports it as
+unknown, the page shows its number and writes it to the chosen person and category.
+
+### Entities
 
 | Entity | Description |
 |---|---|
-| `event.<device>_access` | fires `granted`, `denied` or `other` with `pin`, `card`, `door`, `event`, `event_name`, `verify_mode`, `time` |
+| `event.<device>_access` | fires `granted`, `action`, `denied` or `other` (attributes below) |
 | `binary_sensor.<device>_door_N` | door contact (unknown when no sensor is wired) |
 | `binary_sensor.<device>_door_N_alarm` | alarm / door open too long |
-| `sensor.<device>_last_user` | PIN of the last granted user |
-| `sensor.<device>_users`, `_fingerprint_templates` | counters |
+| `sensor.<device>_last_person` | name of the last person let in or who triggered an action |
+| `sensor.<device>_people`, `_fingerprints`, `_cards` | counters |
 | `button.<device>_open_door_N` | pulse the lock relay |
 | `button.<device>_sync_clock` | set the device clock |
 
-Every access event is also fired on the bus as **`zkaccess_native_access`** with the same
-data plus `device_id`.
+Every access event is also fired on the bus as **`zkaccess_native_access`** with:
 
-Services: `zkaccess_native.set_user`, `delete_user`, `grant`, `revoke`, `open_door`,
-`sync_clock`, `list_users` (returns the users) and `backup` (writes a JSON file in
-`/config/zkaccess_native/`).
+| Field | Example | Meaning |
+|---|---|---|
+| `result` | `granted` | `granted` (door released), `action` (known credential of a category without relay), `denied`, `other` |
+| `person`, `person_name` | `12`, `Alice` | the person (with the "person + category" numbering) |
+| `ha_person` | `person.alice` | linked Home Assistant person, if any |
+| `category`, `category_digit`, `category_type` | `Arm`, `3`, `arm` | the action category |
+| `gesture` | `single` / `double` | `double` = second presentation |
+| `method` | `fingerprint` | `fingerprint`, `card`, `code`, `remote`, `other` |
+| `user_id`, `card`, `door`, `event`, `event_name`, `time`, `device_id` | | raw details |
+
+Actions: `zkaccess_native.set_user`, `delete_user`, `grant`, `revoke`, `open_door`,
+`sync_clock`, `list_users` (returns the users) and `backup`.
 
 Options: polling interval (default 1 s), door open duration, clock sync on connection.
+The device clock is also synced every night at 04:00.
 
 ### Example automations
 
-Turn on the hall light when a known user opens the door at night:
+Run the right action for each category:
 
 ```yaml
 automation:
-  - alias: "Front door - welcome light"
-    triggers:
-      - trigger: state
-        entity_id: event.front_door_access
-        to: ~
-    conditions:
-      - condition: template
-        value_template: "{{ trigger.to_state.attributes.event_type == 'granted' }}"
-      - condition: sun
-        after: sunset
-    actions:
-      - action: light.turn_on
-        target:
-          entity_id: light.hall
-```
-
-Different action per user, with the bus event:
-
-```yaml
-automation:
-  - alias: "Front door - per user"
+  - alias: "Front door - actions"
     triggers:
       - trigger: event
         event_type: zkaccess_native_access
-        event_data:
-          granted: true
+    conditions:
+      - "{{ trigger.event.data.result in ['granted', 'action'] }}"
     actions:
       - choose:
-          - conditions: "{{ trigger.event.data.pin == 101 }}"
+          - conditions: "{{ trigger.event.data.category_type == 'open' }}"
             sequence:
-              - action: notify.mobile_app_phone
-                data:
-                  message: "Alice is home"
+              - action: lock.unlock
+                target: { entity_id: lock.front_door }
+          - conditions: "{{ trigger.event.data.category_type == 'arm' }}"
+            sequence:
+              - action: alarm_control_panel.alarm_arm_away
+                target: { entity_id: alarm_control_panel.home }
+          - conditions: "{{ trigger.event.data.category == 'Garage' }}"
+            sequence:
+              - action: cover.toggle
+                target: { entity_id: cover.garage }
 ```
 
 Notify on refused attempts:
@@ -386,7 +431,7 @@ automation:
       - trigger: event
         event_type: zkaccess_native_access
         event_data:
-          denied: true
+          result: denied
     actions:
       - action: notify.mobile_app_phone
         data:
