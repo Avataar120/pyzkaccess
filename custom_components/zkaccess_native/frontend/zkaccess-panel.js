@@ -194,6 +194,10 @@ main { max-width: 1200px; margin: 0 auto; padding: 20px 16px 48px; display: flex
 .btn.danger { color: var(--error-color, #b42318); border-color: color-mix(in srgb, var(--error-color, #b42318) 40%, transparent); }
 .btn:disabled { opacity: .5; cursor: default; }
 .btn.sm { padding: 4px 10px; min-height: 34px; font-size: 13px; }
+.cred { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; align-items: center; gap: 8px; }
+.cred .val { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cred .btns { display: flex; gap: 6px; }
+.btn.sm { padding: 4px 10px; min-height: 34px; font-size: 13px; }
 .cred { display: grid; grid-template-columns: 44px 1fr auto; align-items: center; gap: 8px; }
 .cred .btns { display: flex; gap: 6px; }
 .pill { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 3px 10px; font-size: 12px; font-weight: 500; white-space: nowrap; }
@@ -710,10 +714,10 @@ class ZkAccessPanel extends HTMLElement {
     }).filter((r) => !this.plain() || r.d === 0);
     const creds = catRows.map(({ d, c, uid }) => `<div style="display:flex;flex-direction:column;gap:8px">
       ${this.plain() ? "" : `<span>${this.catPill(d, `${this.catName(d)} · ${uid}`)}</span>`}
-      <div class="cred"><span class="muted">${this.t("card")}</span><span class="mono" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${c?.card ? "#" + c.card : this.t("none")}</span>
+      <div class="cred"><span class="muted">${this.t("card")}</span><span class="mono val">${c?.card ? "#" + c.card : this.t("none")}</span>
         <span class="btns"><button class="btn sm" data-act="learn-card" data-p="${p.num}" data-d="${d}">${c?.card ? this.t("replace") : this.t("learn_card")}</button>
         ${c?.card ? `<button class="btn sm danger" data-act="card-remove" data-p="${p.num}" data-d="${d}">${this.t("remove")}</button>` : ""}</span></div>
-      <div class="cred"><span class="muted">${this.t("code")}</span><span style="white-space:nowrap">${c?.has_code ? "••••" : this.t("none")}</span>
+      <div class="cred"><span class="muted">${this.t("code")}</span><span class="val">${c?.has_code ? "••••" : this.t("none")}</span>
         <span class="btns"><button class="btn sm" data-act="code-edit" data-p="${p.num}" data-d="${d}">${c?.has_code ? this.t("change") : this.t("set_code")}</button>
         ${c?.has_code ? `<button class="btn sm danger" data-act="code-remove" data-p="${p.num}" data-d="${d}">${this.t("remove")}</button>` : ""}</span></div></div>`).join("");
     const table = this.plain() ? "" : `<section class="card tablewrap"><h2>${this.t("categories_of")}</h2><table style="min-width:560px"><thead><tr>

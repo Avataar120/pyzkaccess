@@ -236,7 +236,12 @@ A status record is returned on every poll. Each event is returned once; poll oft
 every 300 ms to 1 s) to get them promptly.
 
 Event codes observed on the reference device: **0** normal open (card), **7** cancel alarm,
-**8** remote opening, **14** fingerprint open, **34** unregistered fingerprint, **255** status. The full list from the PullSDK
+**8** remote opening, **14** fingerprint open, **27** unregistered card (UserID 0, the card
+number is in bytes 0-3), **34** unregistered fingerprint (UserID 0), **255** status.
+
+The `transaction` table keeps every event (tens of thousands of rows). A filtered read
+(`08` with a condition) on it can take more than 5 seconds, during which the device answers
+no other session **[verified]**: avoid it while another program is polling the device. The full list from the PullSDK
 documentation is in `pyzkaccess_native.events.EventType`.
 
 ## 8. Control (`05`)
