@@ -29,7 +29,7 @@ const I18N = {
     fingers_help: "Each enrolled finger belongs to a category. Click a free finger to enroll it, or an enrolled finger to change its category or delete it.",
     left_hand: "Left hand", right_hand: "Right hand",
     finger_little: "Little", finger_ring: "Ring", finger_middle: "Middle", finger_index: "Index", finger_thumb: "Thumb",
-    left: "Left", right: "Right", category: "Category", delete_fingerprint: "Delete fingerprint",
+    left: "Left", right: "Right", finger_full: "{side} {finger}", category: "Category", delete_fingerprint: "Delete fingerprint",
     unplaced: "Fingerprints not placed on the hand",
     unplaced_help: "Enrolled on the keypad: tell which finger it is so it shows on the hand.",
     place_on: "Finger", slot: "UserID {u} · slot {s}",
@@ -68,7 +68,7 @@ const I18N = {
     alarm_delay: "Alarm when left open for (s)", verify_mode: "Verification mode (device value)",
     free_passage: "Free-passage time zone (0 = none)", close_and_lock: "Relock as soon as the door closes",
     save_device: "Save to device", clock: "Device clock", sync_now: "Sync now", device_info: "Device",
-    model: "Model", firmware: "Firmware", doors: "Doors", cancel_alarm: "Cancel alarm",
+    model: "Machine type", firmware: "Firmware", doors: "Doors", cancel_alarm: "Cancel alarm",
     cancel_alarm_help: "Stops the device alarm (tamper, door forced…).",
     action_categories: "Action categories",
     categories_help: "UserID = person number (2 digits) + category digit. E.g. person 12 + category 3 = UserID 123. Automations react to “category” in the access event.",
@@ -102,7 +102,7 @@ const I18N = {
     fingers_help: "Chaque doigt enregistré appartient à une catégorie. Cliquez sur un doigt libre pour l'enregistrer, ou sur un doigt enregistré pour changer sa catégorie ou le supprimer.",
     left_hand: "Main gauche", right_hand: "Main droite",
     finger_little: "Auriculaire", finger_ring: "Annulaire", finger_middle: "Majeur", finger_index: "Index", finger_thumb: "Pouce",
-    left: "gauche", right: "droit", category: "Catégorie", delete_fingerprint: "Supprimer l'empreinte",
+    left: "gauche", right: "droit", finger_full: "{finger} {side}", category: "Catégorie", delete_fingerprint: "Supprimer l'empreinte",
     unplaced: "Empreintes non placées sur la main",
     unplaced_help: "Enregistrées au clavier : indiquez de quel doigt il s'agit pour l'afficher sur la main.",
     place_on: "Doigt", slot: "UserID {u} · emplacement {s}",
@@ -141,7 +141,7 @@ const I18N = {
     alarm_delay: "Alarme si porte restée ouverte (s)", verify_mode: "Mode de vérification (valeur du lecteur)",
     free_passage: "Plage d'ouverture libre (0 = aucune)", close_and_lock: "Reverrouiller dès la fermeture",
     save_device: "Enregistrer dans le lecteur", clock: "Horloge du lecteur", sync_now: "Remettre à l'heure", device_info: "Appareil",
-    model: "Modèle", firmware: "Firmware", doors: "Portes", cancel_alarm: "Annuler l'alarme",
+    model: "Type de machine", firmware: "Firmware", doors: "Portes", cancel_alarm: "Annuler l'alarme",
     cancel_alarm_help: "Arrête l'alarme du lecteur (arrachement, porte forcée…).",
     action_categories: "Catégories d'action",
     categories_help: "UserID = numéro de personne (2 chiffres) + chiffre de catégorie. Ex. personne 12 + catégorie 3 = UserID 123. Les automations réagissent à « category » dans l'événement d'accès.",
@@ -193,6 +193,9 @@ main { max-width: 1200px; margin: 0 auto; padding: 20px 16px 48px; display: flex
 .btn.primary { background: var(--zk-accent); border-color: var(--zk-accent); color: #fff; }
 .btn.danger { color: var(--error-color, #b42318); border-color: color-mix(in srgb, var(--error-color, #b42318) 40%, transparent); }
 .btn:disabled { opacity: .5; cursor: default; }
+.btn.sm { padding: 4px 10px; min-height: 34px; font-size: 13px; }
+.cred { display: grid; grid-template-columns: 44px 1fr auto; align-items: center; gap: 8px; }
+.cred .btns { display: flex; gap: 6px; }
 .pill { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 3px 10px; font-size: 12px; font-weight: 500; white-space: nowrap; }
 .status { margin-left: auto; }
 input, select { font: inherit; font-size: 14px; color: inherit; background: var(--zk-card); padding: 8px 10px;
@@ -319,7 +322,10 @@ class ZkAccessPanel extends HTMLElement {
   plain() { return this._s.state?.numbering === "plain"; }
   persons() { return this._s.state?.snapshot?.persons || []; }
   findPerson(num) { return this.persons().find((p) => p.num === num); }
-  fingerName(i) { return `${this.t("finger_" + FINGER_KEYS[i])} ${i < 5 ? this.t("left") : this.t("right")}`; }
+  fingerName(i) {
+    const name = this.t("finger_full", { finger: this.t("finger_" + FINGER_KEYS[i]).toLowerCase(), side: this.t(i < 5 ? "left" : "right") });
+    return name.charAt(0).toUpperCase() + name.slice(1);
+  }
 
   // ------------------------------------------------------------------ loading
   async _start() {
@@ -704,12 +710,12 @@ class ZkAccessPanel extends HTMLElement {
     }).filter((r) => !this.plain() || r.d === 0);
     const creds = catRows.map(({ d, c, uid }) => `<div style="display:flex;flex-direction:column;gap:8px">
       ${this.plain() ? "" : `<span>${this.catPill(d, `${this.catName(d)} · ${uid}`)}</span>`}
-      <div class="row"><span class="muted" style="width:44px">${this.t("card")}</span><span class="mono" style="flex:1">${c?.card ? "#" + c.card : this.t("none")}</span>
-        <button class="btn" data-act="learn-card" data-p="${p.num}" data-d="${d}">${c?.card ? this.t("replace") : this.t("learn_card")}</button>
-        ${c?.card ? `<button class="btn danger" data-act="card-remove" data-p="${p.num}" data-d="${d}">${this.t("remove")}</button>` : ""}</div>
-      <div class="row"><span class="muted" style="width:44px">${this.t("code")}</span><span style="flex:1">${c?.has_code ? this.t("code_set") : this.t("none")}</span>
-        <button class="btn" data-act="code-edit" data-p="${p.num}" data-d="${d}">${c?.has_code ? this.t("change") : this.t("set_code")}</button>
-        ${c?.has_code ? `<button class="btn danger" data-act="code-remove" data-p="${p.num}" data-d="${d}">${this.t("remove")}</button>` : ""}</div></div>`).join("");
+      <div class="cred"><span class="muted">${this.t("card")}</span><span class="mono" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${c?.card ? "#" + c.card : this.t("none")}</span>
+        <span class="btns"><button class="btn sm" data-act="learn-card" data-p="${p.num}" data-d="${d}">${c?.card ? this.t("replace") : this.t("learn_card")}</button>
+        ${c?.card ? `<button class="btn sm danger" data-act="card-remove" data-p="${p.num}" data-d="${d}">${this.t("remove")}</button>` : ""}</span></div>
+      <div class="cred"><span class="muted">${this.t("code")}</span><span style="white-space:nowrap">${c?.has_code ? "••••" : this.t("none")}</span>
+        <span class="btns"><button class="btn sm" data-act="code-edit" data-p="${p.num}" data-d="${d}">${c?.has_code ? this.t("change") : this.t("set_code")}</button>
+        ${c?.has_code ? `<button class="btn sm danger" data-act="code-remove" data-p="${p.num}" data-d="${d}">${this.t("remove")}</button>` : ""}</span></div></div>`).join("");
     const table = this.plain() ? "" : `<section class="card tablewrap"><h2>${this.t("categories_of")}</h2><table style="min-width:560px"><thead><tr>
       <th>${this.t("category")}</th><th>${this.t("user_id")}</th><th>${this.t("fingerprints_title")}</th><th>${this.t("card")}</th><th>${this.t("code")}</th><th>${this.t("relay")}</th></tr></thead><tbody>
       ${p.categories.map((c) => `<tr><td>${this.catPill(c.digit, this.catName(c.digit))}</td><td class="mono">${c.user_id}</td><td>${c.fingers.length}</td>
@@ -755,7 +761,8 @@ class ZkAccessPanel extends HTMLElement {
       const who = h.person_name || (h.user_id ? (h.person ? this.t("person_no", { n: h.person }) : this.t("unknown_user", { u: h.user_id }))
         : h.card ? this.t("unknown_card") : h.event_name);
       const parts = [h.category, this.t("method_" + h.method), h.card && !h.person ? `#${h.card}` : null,
-        h.gesture === "double" ? this.t("second_presentation") : null, h.result === "denied" || h.result === "other" ? h.event_name : null].filter(Boolean);
+        h.gesture === "double" ? this.t("second_presentation") : null,
+        (h.result === "denied" || h.result === "other") && h.event_name !== who ? h.event_name : null].filter(Boolean);
       const canAssign = h.card && !h.person && h.result === "denied";
       return `<div class="ev"><span class="muted" style="width:120px;font-size:13px">${this.fmtTime(h.time)}</span>
         <span class="dot" style="background:${bg};color:${fg}">${icon}</span>
