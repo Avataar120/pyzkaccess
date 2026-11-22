@@ -13,6 +13,8 @@
   off in Settings, where the response time can also be measured on demand. No reconnection
   attempt while the device boots.
 - Protocol: reboot (control operation 3) verified on the MA500.
+- Panel Settings: changes are saved at once (no Save button); the General / Maintenance card
+  is at the top of the right column.
 - Panel and activity card: their URL carries a hash of the file, so an update is always
   loaded (it could stay cached when the version number did not change).
 

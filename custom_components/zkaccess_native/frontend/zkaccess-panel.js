@@ -86,6 +86,7 @@ const I18N = {
     restore_title: "Restore {name}", merge: "Merge (add and update)", replace_all: "Replace (exact copy)",
     restore_help: "A backup of the current state is made first.",
     general: "General", notify_keypad: "Notify when a user is added on the keypad",
+    autosave: "Changes are saved at once.",
     maintenance: "Maintenance", nightly_restart: "Reboot the reader every night at 04:00 (after the clock sync and backup)",
     slow_restart: "Reboot the reader when it answers slowly (over 0.5 s, measured every hour; at most every 6 h)",
     response_time: "Response time", not_measured: "not measured yet", measure_now: "Measure now", restart_device: "Reboot the reader",
@@ -194,6 +195,7 @@ const I18N = {
     restore_title: "Restaurer {name}", merge: "Fusionner (ajoute et met à jour)", replace_all: "Remplacer (copie exacte)",
     restore_help: "Une sauvegarde de l'état actuel est faite avant.",
     general: "Général", notify_keypad: "Notifier quand un utilisateur est ajouté au clavier",
+    autosave: "Les modifications sont enregistrées immédiatement.",
     maintenance: "Maintenance", nightly_restart: "Redémarrer le lecteur chaque nuit à 4 h (après la mise à l'heure et la sauvegarde)",
     slow_restart: "Redémarrer le lecteur s'il répond lentement (plus de 0,5 s, mesuré chaque heure ; au plus toutes les 6 h)",
     response_time: "Temps de réponse", not_measured: "pas encore mesuré", measure_now: "Mesurer maintenant", restart_device: "Redémarrer le lecteur",
@@ -604,13 +606,7 @@ class ZkAccessPanel extends HTMLElement {
       }
       case "clock-sync": await this.call("clock/sync", {}, this.t("saved")); await this.loadDoor(); return;
       case "cats-save": await this.saveCategories(); return;
-      case "settings-save": {
-        await this.call("settings/save", { backup: { on_change: this.chk("bk-change"), nightly: this.chk("bk-nightly"), keep: Number(this.val("bk-keep")) },
-          notify_keypad: this.chk("notify-keypad"), panel_title: this.val("panel-title"),
-          maintenance: { nightly_restart: this.chk("mt-nightly"), slow_restart: this.chk("mt-slow") },
-          poll_interval: Math.min(3, Math.max(0.3, Number(this.val("poll-interval").replace(",", ".")) || 1)) }, this.t("saved"));
-        await this.refresh(); return;
-      }
+      case "settings-save": await this.saveSettings(); return;
       case "device-restart":
         s.modal = { kind: "confirm", text: esc(this.t("restart_confirm")), ok: this.t("restart_device"), then: async () => {
           await this.call("device/restart", {}, this.t("restart_sent")); await this.refresh(); } };
@@ -683,6 +679,19 @@ class ZkAccessPanel extends HTMLElement {
   async loadBackups() {
     try { this._s.backups = await this.ws("backup/list"); } catch (e) { this._s.backups = []; }
     this.render();
+  }
+
+  async saveSettings() {
+    // Saved as soon as a field changes (no Save button): toggles at once, text fields on blur / Enter.
+    const st = this._s.state;
+    const keep = Number(this.val("bk-keep")) || st?.settings?.backup?.keep || 30;
+    const poll = Number((this.val("poll-interval") || "").replace(",", ".")) || st?.settings?.poll_interval || 1;
+    await this.call("settings/save", {
+      backup: { on_change: this.chk("bk-change"), nightly: this.chk("bk-nightly"), keep: Math.min(500, Math.max(1, Math.round(keep))) },
+      notify_keypad: this.chk("notify-keypad"), panel_title: this.val("panel-title"),
+      maintenance: { nightly_restart: this.chk("mt-nightly"), slow_restart: this.chk("mt-slow") },
+      poll_interval: Math.min(3, Math.max(0.3, poll)) }, this.t("saved"));
+    await this.refresh();
   }
 
   async saveCategories() {
@@ -782,6 +791,10 @@ class ZkAccessPanel extends HTMLElement {
     }
     root.querySelectorAll("select[id^=ct-type-]").forEach((sel) => sel.addEventListener("change", () => {
       const row = root.getElementById("ct-toggle-" + sel.id.slice(8)); if (row) row.hidden = sel.value !== "toggle"; }));
+    for (const id of ["bk-change", "bk-nightly", "bk-keep", "notify-keypad", "panel-title", "poll-interval", "mt-nightly", "mt-slow"]) {
+      const el = root.getElementById(id);
+      if (el) el.addEventListener("change", () => this.saveSettings().catch(() => {}));
+    }
     const cardIn = root.getElementById("card-no");
     if (cardIn) cardIn.addEventListener("input", () => { this._s.modal.cardInput = cardIn.value; });
   }
@@ -1099,7 +1112,7 @@ class ZkAccessPanel extends HTMLElement {
           ${st?.last_restart ? ` · ${this.t("last_restart", { t: esc(this.fmtTime(st.last_restart.time)), r: esc(this.t("restart_" + st.last_restart.reason)) })}` : ""}</div>
         <div class="row" style="margin-top:8px"><button class="btn sm" data-act="measure-response">${this.t("measure_now")}</button>
           <button class="btn sm danger" data-act="device-restart">${this.t("restart_device")}</button></div>
-        <div class="actions" style="margin-top:12px"><button class="btn primary" data-act="settings-save">${this.t("save")}</button></div></section>
+        <p class="sub" style="margin:12px 0 0">${this.t("autosave")}</p></section>
         <section class="card"><h2>${this.t("clock")}</h2><div style="font-size:24px;font-weight:500">${this._s.door?.device_time ? this.fmtTime(this._s.door.device_time) : "—"}</div>
           ${st?.clock_offset != null ? `<div class="muted">${this.t("clock_offset", { s: st.clock_offset })}</div>` : ""}
           <div class="actions" style="justify-content:flex-start;margin-top:12px"><button class="btn" data-act="clock-sync">${this.t("sync_now")}</button></div></section>
