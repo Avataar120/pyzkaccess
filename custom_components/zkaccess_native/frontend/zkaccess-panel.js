@@ -86,6 +86,13 @@ const I18N = {
     restore_title: "Restore {name}", merge: "Merge (add and update)", replace_all: "Replace (exact copy)",
     restore_help: "A backup of the current state is made first.",
     general: "General", notify_keypad: "Notify when a user is added on the keypad",
+    maintenance: "Maintenance", nightly_restart: "Reboot the reader every night at 04:00 (after the clock sync and backup)",
+    slow_restart: "Reboot the reader when it answers slowly (over 0.5 s, measured every hour; at most every 6 h)",
+    response_time: "Response time", not_measured: "not measured yet", measure_now: "Measure now", restart_device: "Reboot the reader",
+    restart_confirm: "Reboot the reader now? It is unavailable for about 25 seconds (no access during that time); data and lock are untouched.",
+    restart_sent: "Reboot sent: back in about 25 s", response_measured: "Response time: {s} s",
+    last_restart: "last reboot {t} ({r})", restart_nightly: "nightly", restart_slow: "slow device", restart_button: "button",
+    restart_service: "action", restart_panel: "panel",
     panel_title: "Name in the sidebar (empty = default)", poll_interval: "Reader polling interval (s)", poll_help: "How often the device's real-time log is read: shorter reacts faster, longer loads the device less (0.3 to 3 s).",
     saved: "Saved", error: "Error", loading: "Loading…", no_device: "No ZKAccess device is configured.",
     reason_change: "Change detected", reason_nightly: "Nightly", reason_manual: "Manual",
@@ -187,6 +194,13 @@ const I18N = {
     restore_title: "Restaurer {name}", merge: "Fusionner (ajoute et met à jour)", replace_all: "Remplacer (copie exacte)",
     restore_help: "Une sauvegarde de l'état actuel est faite avant.",
     general: "Général", notify_keypad: "Notifier quand un utilisateur est ajouté au clavier",
+    maintenance: "Maintenance", nightly_restart: "Redémarrer le lecteur chaque nuit à 4 h (après la mise à l'heure et la sauvegarde)",
+    slow_restart: "Redémarrer le lecteur s'il répond lentement (plus de 0,5 s, mesuré chaque heure ; au plus toutes les 6 h)",
+    response_time: "Temps de réponse", not_measured: "pas encore mesuré", measure_now: "Mesurer maintenant", restart_device: "Redémarrer le lecteur",
+    restart_confirm: "Redémarrer le lecteur maintenant ? Il est indisponible environ 25 secondes (aucun accès pendant ce temps) ; données et gâche ne sont pas touchées.",
+    restart_sent: "Redémarrage envoyé : retour dans environ 25 s", response_measured: "Temps de réponse : {s} s",
+    last_restart: "dernier redémarrage {t} ({r})", restart_nightly: "nuit", restart_slow: "lecteur lent", restart_button: "bouton",
+    restart_service: "action", restart_panel: "panneau",
     panel_title: "Nom dans le menu latéral (vide = par défaut)", poll_interval: "Intervalle d'interrogation du lecteur (s)", poll_help: "Fréquence de lecture du journal temps réel du lecteur : plus court réagit plus vite, plus long sollicite moins le lecteur (0,3 à 3 s).",
     saved: "Enregistré", error: "Erreur", loading: "Chargement…", no_device: "Aucun appareil ZKAccess n'est configuré.",
     reason_change: "Changement détecté", reason_nightly: "Nocturne", reason_manual: "Manuelle",
@@ -593,8 +607,17 @@ class ZkAccessPanel extends HTMLElement {
       case "settings-save": {
         await this.call("settings/save", { backup: { on_change: this.chk("bk-change"), nightly: this.chk("bk-nightly"), keep: Number(this.val("bk-keep")) },
           notify_keypad: this.chk("notify-keypad"), panel_title: this.val("panel-title"),
+          maintenance: { nightly_restart: this.chk("mt-nightly"), slow_restart: this.chk("mt-slow") },
           poll_interval: Math.min(3, Math.max(0.3, Number(this.val("poll-interval").replace(",", ".")) || 1)) }, this.t("saved"));
         await this.refresh(); return;
+      }
+      case "device-restart":
+        s.modal = { kind: "confirm", text: esc(this.t("restart_confirm")), ok: this.t("restart_device"), then: async () => {
+          await this.call("device/restart", {}, this.t("restart_sent")); await this.refresh(); } };
+        break;
+      case "measure-response": {
+        const v = await this.call("device/response_time", {}); await this.refresh();
+        if (v != null) this.toast(this.t("response_measured", { s: Number(v).toFixed(3) })); return;
       }
       case "backup-now": await this.call("backup/create", {}, this.t("saved")); await this.loadBackups(); return;
       case "backup-download": {
@@ -1083,6 +1106,13 @@ class ZkAccessPanel extends HTMLElement {
         <label class="chk"><input type="checkbox" id="notify-keypad" ${st?.settings?.notify_keypad !== false ? "checked" : ""}>${this.t("notify_keypad")}</label>
         <label class="field" style="margin-top:12px">${this.t("poll_interval")}<input id="poll-interval" type="number" min="0.3" max="3" step="0.1" value="${st?.settings?.poll_interval ?? 1}" style="width:100px"></label>
         <span class="muted">${this.t("poll_help")}</span>
+        <h3 style="margin:18px 0 6px;font-size:15px;font-weight:500">${this.t("maintenance")}</h3>
+        <label class="chk"><input type="checkbox" id="mt-nightly" ${st?.settings?.maintenance?.nightly_restart !== false ? "checked" : ""}>${this.t("nightly_restart")}</label>
+        <label class="chk" style="margin-top:6px"><input type="checkbox" id="mt-slow" ${st?.settings?.maintenance?.slow_restart !== false ? "checked" : ""}>${this.t("slow_restart")}</label>
+        <div class="muted" style="margin-top:8px">${this.t("response_time")} : ${st?.response_time != null ? Number(st.response_time).toFixed(3) + " s" : this.t("not_measured")}
+          ${st?.last_restart ? ` · ${this.t("last_restart", { t: esc(this.fmtTime(st.last_restart.time)), r: esc(this.t("restart_" + st.last_restart.reason)) })}` : ""}</div>
+        <div class="row" style="margin-top:8px"><button class="btn sm" data-act="measure-response">${this.t("measure_now")}</button>
+          <button class="btn sm danger" data-act="device-restart">${this.t("restart_device")}</button></div>
         <div class="actions" style="margin-top:12px"><button class="btn primary" data-act="settings-save">${this.t("save")}</button></div></section></div>
       </div></main>`;
   }

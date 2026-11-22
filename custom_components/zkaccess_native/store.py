@@ -37,6 +37,8 @@ DEFAULTS: dict[str, Any] = {
     # phone (Home Assistant device id) -> {"person": n, "digit": d, "name": str, "enabled": bool}
     "phones": {},
     "backup": {"on_change": True, "nightly": True, "keep": 30},
+    # nightly reboot at 04:00; reboot when the hourly response time is above the threshold
+    "maintenance": {"nightly_restart": True, "slow_restart": True},
     "notify_keypad": True,
     "history": [],
 }

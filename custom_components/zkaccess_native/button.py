@@ -1,7 +1,7 @@
 """Buttons: open each door, sync the clock."""
 from __future__ import annotations
 
-from homeassistant.components.button import ButtonEntity
+from homeassistant.components.button import ButtonDeviceClass, ButtonEntity
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -15,7 +15,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ZKConfigEntry,
                             add: AddEntitiesCallback) -> None:
     coord = entry.runtime_data
     doors = (coord.info.lock_count if coord.info else None) or 1
-    add([ZKOpenDoor(coord, d) for d in range(1, doors + 1)] + [ZKSyncClock(coord)])
+    add([ZKOpenDoor(coord, d) for d in range(1, doors + 1)] + [ZKSyncClock(coord), ZKRestart(coord)])
 
 
 class _ZKButton(ZKEntity, ButtonEntity):
@@ -49,3 +49,17 @@ class ZKSyncClock(_ZKButton):
 
     def _action(self) -> None:
         self.coordinator.client.set_time()
+
+
+class ZKRestart(ZKEntity, ButtonEntity):
+    """Reboot the device (about 25 s; data and lock untouched)."""
+
+    _attr_translation_key = "restart"
+    _attr_device_class = ButtonDeviceClass.RESTART
+    _attr_entity_category = EntityCategory.CONFIG
+
+    def __init__(self, coordinator) -> None:
+        super().__init__(coordinator, "restart")
+
+    async def async_press(self) -> None:
+        await self.coordinator.async_restart_device("button")

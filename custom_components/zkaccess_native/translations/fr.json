@@ -125,6 +125,9 @@
       },
       "clock_offset": {
         "name": "Écart d'horloge"
+      },
+      "response_time": {
+        "name": "Temps de réponse"
       }
     },
     "button": {
@@ -133,6 +136,9 @@
       },
       "sync_clock": {
         "name": "Mettre à l'heure"
+      },
+      "restart": {
+        "name": "Redémarrer"
       }
     }
   },
@@ -298,6 +304,16 @@
         "name": {
           "name": "Nom",
           "description": "Nouveau nom (24 caractères au plus)."
+        }
+      }
+    },
+    "restart": {
+      "name": "Redémarrer l'appareil",
+      "description": "Redémarre le lecteur (environ 25 s sans accès ; données et gâche intactes).",
+      "fields": {
+        "device_id": {
+          "name": "Appareil",
+          "description": "L'appareil ZKAccess."
         }
       }
     }

@@ -15,7 +15,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ZKConfigEntry,
                             add: AddEntitiesCallback) -> None:
     coord = entry.runtime_data
     add([ZKCount(coord, "persons"), ZKCount(coord, "fingerprints"), ZKCount(coord, "cards"),
-         ZKLastPerson(coord), ZKClockOffset(coord)])
+         ZKLastPerson(coord), ZKClockOffset(coord), ZKResponseTime(coord)])
 
 
 class ZKCount(ZKEntity, SensorEntity):
@@ -70,3 +70,22 @@ class ZKClockOffset(ZKEntity, SensorEntity):
     @property
     def native_value(self) -> float | None:
         return self.coordinator.clock_offset
+
+
+class ZKResponseTime(ZKEntity, SensorEntity):
+    """Median response time of the device, measured every hour (a slow device is rebooted
+    when the option is on)."""
+
+    _attr_translation_key = "response_time"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_device_class = SensorDeviceClass.DURATION
+    _attr_native_unit_of_measurement = UnitOfTime.SECONDS
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 3
+
+    def __init__(self, coordinator) -> None:
+        super().__init__(coordinator, "response_time")
+
+    @property
+    def native_value(self) -> float | None:
+        return self.coordinator.response_time

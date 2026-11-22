@@ -494,6 +494,8 @@ person: 12               # optional: one person only
 | `sensor.<device>_people`, `_fingerprints`, `_cards` | counters |
 | `button.<device>_open_door_N` | pulse the lock relay |
 | `button.<device>_sync_clock` | set the device clock |
+| `button.<device>_restart` | reboot the device (about 25 s without access; data and lock untouched) |
+| `sensor.<device>_response_time` | median response time of the device, measured every hour |
 | `switch.<device>_access_<person>` | one per person: access enabled / disabled (same as the panel toggle); usable in automations, e.g. a schedule |
 | `binary_sensor.<device>_connected` | device reachable (stays available, so you can alert on it) |
 | `sensor.<device>_clock_offset` | device clock drift before the last sync, in seconds |
@@ -523,6 +525,12 @@ The door sensor and its alarm are disabled by default when the device reports no
 contact wired; enable them in the entity settings if you wire one later.
 
 Options: polling interval (default 1 s, 0.3 to 3 s), door open duration, clock sync on connection.
+
+**Maintenance** (panel *Settings*, both on by default): reboot the reader every night at 04:00,
+after the clock sync and the backup; and reboot it when its response time, measured every hour,
+is over 0.5 s (at most once every 6 hours). A MA500 was seen slowing down to 0.5 s per request
+after a busy day, which made everything slow (identification especially), and a reboot fixed it.
+Action `zkaccess_native.restart` reboots on demand.
 The device clock is also synced every night at 04:00.
 
 **Diagnostics** can be downloaded from the device page (personal data, card numbers, names

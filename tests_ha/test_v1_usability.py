@@ -159,3 +159,31 @@ async def test_method_deduced_for_refusal_without_rights(hass: HomeAssistant, em
     await coord.async_refresh()
     await hass.async_block_till_done()
     assert events[-1].data["result"] == "action" and events[-1].data["method"] == "fingerprint"
+
+
+async def test_restart_and_response_time(hass: HomeAssistant, emulator, entry, monkeypatch):
+    coord = entry.runtime_data
+    ent = er.async_get(hass)
+    button = ent.async_get_entity_id("button", DOMAIN, "EMU0000000001_restart")
+    sensor = ent.async_get_entity_id("sensor", DOMAIN, "EMU0000000001_response_time")
+    await hass.services.async_call("button", "press", {"entity_id": button}, blocking=True)
+    assert emulator.state.controls[-1][0] == 3                      # control op 3 = reboot
+    assert coord.store.data["last_restart"]["reason"] == "button"
+    assert not coord.client.connected                               # waits for the device to boot
+
+    # Hourly check: fast device -> measured, no reboot.
+    n = len(emulator.state.controls)
+    assert await coord.async_check_response_time() is not None
+    await hass.async_block_till_done()
+    assert float(hass.states.get(sensor).state) >= 0 and len(emulator.state.controls) == n
+    # Slow device -> one reboot, then none within the cool-down.
+    monkeypatch.setattr(coord, "_measure_response", lambda: 0.8)
+    await coord.async_check_response_time()
+    assert len(emulator.state.controls) == n + 1 and coord.store.data["last_restart"]["reason"] == "slow"
+    await coord.async_check_response_time()
+    assert len(emulator.state.controls) == n + 1
+    # Option off -> no reboot even when slow.
+    coord._last_auto_restart = 0
+    coord.maintenance["slow_restart"] = False
+    await coord.async_check_response_time()
+    assert len(emulator.state.controls) == n + 1

@@ -49,11 +49,14 @@ def _state(coord: ZKCoordinator) -> dict[str, Any]:
         "settings": {"backup": coord.store.data["backup"],
                      "notify_keypad": coord.store.data.get("notify_keypad", True),
                      "panel_title": coord.store.data.get("panel_title"),
+                     "maintenance": coord.maintenance,
                      "poll_interval": poll_interval(coord.config_entry.options)},
         "enrollment": coord.enrollment,
         "tags": coord.store.data["tags"],
         "phone_pairing": coord.phone_pairing and {k: v for k, v in coord.phone_pairing.items() if k != "until"},
         "clock_offset": coord.clock_offset,
+        "response_time": coord.response_time,
+        "last_restart": coord.store.data.get("last_restart"),
     }
 
 
@@ -468,12 +471,38 @@ async def ws_backup_import(hass, connection, msg) -> None:
     await _guard(connection, msg, hass.async_add_executor_job(coord.manager.backup_import, msg["content"]))
 
 
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/device/restart", ENTRY: str})
+@websocket_api.require_admin
+@websocket_api.async_response
+async def ws_device_restart(hass, connection, msg) -> None:
+    """Reboot the device (about 25 s)."""
+    coord = _coordinator(hass, msg["entry_id"])
+    await _guard(connection, msg, coord.async_restart_device("panel"))
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/device/response_time", ENTRY: str})
+@websocket_api.require_admin
+@websocket_api.async_response
+async def ws_device_response_time(hass, connection, msg) -> None:
+    """Measure the response time now (no automatic reboot from here)."""
+    coord = _coordinator(hass, msg["entry_id"])
+
+    async def run():
+        value = await coord.async_run(coord._measure_response, refresh=False)
+        coord.response_time = round(value, 3)
+        coord.async_update_listeners()
+        return coord.response_time
+    await _guard(connection, msg, run())
+
+
 @websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/settings/save", ENTRY: str,
                                   vol.Optional("backup"): {vol.Optional("on_change"): bool,
                                                            vol.Optional("nightly"): bool,
                                                            vol.Optional("keep"): vol.All(int, vol.Range(1, 500))},
                                   vol.Optional("notify_keypad"): bool,
                                   vol.Optional("panel_title"): vol.All(str, vol.Length(max=40)),
+                                  vol.Optional("maintenance"): {vol.Optional("nightly_restart"): bool,
+                                                                vol.Optional("slow_restart"): bool},
                                   vol.Optional("poll_interval"): vol.All(vol.Coerce(float),
                                                                          vol.Range(POLL_INTERVAL_MIN, POLL_INTERVAL_MAX))})
 @websocket_api.require_admin
@@ -488,6 +517,8 @@ def ws_settings_save(hass, connection, msg) -> None:
         coord.store.data["backup"].update(msg["backup"])
     if "notify_keypad" in msg:
         coord.store.data["notify_keypad"] = msg["notify_keypad"]
+    if "maintenance" in msg:
+        coord.maintenance.update(msg["maintenance"])
     if "panel_title" in msg:
         title = msg["panel_title"].strip() or None
         if title != coord.store.data.get("panel_title"):
@@ -502,7 +533,8 @@ COMMANDS = [ws_devices, ws_state, ws_history, ws_subscribe, ws_person_save, ws_p
             ws_enroll_cancel, ws_identify_start, ws_identify_cancel, ws_phone_pair_start, ws_phone_pair_cancel, ws_phone_update, ws_phone_remove,
             ws_tags_save, ws_unassigned_assign, ws_user_delete, ws_categories_save, ws_door_get,
             ws_door_set, ws_door_control, ws_clock_sync, ws_backup_list, ws_backup_create,
-            ws_backup_download, ws_backup_restore, ws_backup_import, ws_settings_save]
+            ws_backup_download, ws_backup_restore, ws_backup_import, ws_settings_save, ws_device_restart,
+            ws_device_response_time]
 
 
 @callback

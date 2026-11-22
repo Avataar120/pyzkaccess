@@ -58,3 +58,6 @@ rename_person:
       required: true
       selector:
         text: {}
+restart:
+  fields:
+    device_id: *device

@@ -38,6 +38,7 @@ SCHEMAS = {
     "open_door": vol.Schema({**_BASE, vol.Optional("door", default=1): cv.positive_int,
                              vol.Optional("seconds", default=5): vol.All(int, vol.Range(1, 254))}),
     "sync_clock": vol.Schema(_BASE),
+    "restart": vol.Schema(_BASE),
     "backup": vol.Schema(_BASE),
     "list_users": vol.Schema(_BASE),
     # Person / category model (prefer these to the raw UserID services above).
@@ -104,6 +105,8 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             await coord.async_run(dev.revoke, d["user_id"])
         elif service == "open_door":
             await coord.async_run(dev.open_door, d["door"], d["seconds"], refresh=False)
+        elif service == "restart":
+            await coord.async_restart_device("service")
         elif service == "sync_clock":
             await coord.async_run(dev.set_time, refresh=False)
         elif service == "list_users":

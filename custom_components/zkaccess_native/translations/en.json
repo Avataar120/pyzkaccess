@@ -125,6 +125,9 @@
       },
       "clock_offset": {
         "name": "Clock offset"
+      },
+      "response_time": {
+        "name": "Response time"
       }
     },
     "button": {
@@ -133,6 +136,9 @@
       },
       "sync_clock": {
         "name": "Sync clock"
+      },
+      "restart": {
+        "name": "Reboot"
       }
     }
   },
@@ -298,6 +304,16 @@
         "name": {
           "name": "Name",
           "description": "New name (24 characters at most)."
+        }
+      }
+    },
+    "restart": {
+      "name": "Reboot the device",
+      "description": "Reboot the reader (about 25 s without access; data and lock untouched).",
+      "fields": {
+        "device_id": {
+          "name": "Device",
+          "description": "The ZKAccess device."
         }
       }
     }

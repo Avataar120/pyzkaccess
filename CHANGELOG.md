@@ -7,6 +7,12 @@
   them, 14 instead of 26 to put them back), and the result shows as soon as the finger is
   recognized while the fingerprints are put back in the background (an action started
   meanwhile, such as deleting that fingerprint, waits for it).
+- Home Assistant integration: **maintenance**. Reboot button and `restart` action; nightly
+  reboot at 04:00 after the clock sync and backup; hourly response-time measure (diagnostic
+  sensor) with a reboot when it is over 0.5 s (at most every 6 h). Both options can be turned
+  off in Settings, where the response time can also be measured on demand. No reconnection
+  attempt while the device boots.
+- Protocol: reboot (control operation 3) verified on the MA500.
 
 ## 0.5.1 - 2026-11-22
 
