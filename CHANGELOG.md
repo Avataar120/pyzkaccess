@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+- Home Assistant integration: **Reconfigure** a device (new address, port or password)
+  without losing anything; a refused communication password asks for the new one (reauth).
+- Home Assistant integration: ZKTeco devices (MAC prefix 00:17:61) found by DHCP are offered
+  for setup, and a configured device's new address is picked up.
+- Home Assistant integration: **device triggers** for the automation editor: category
+  presented (optionally by one person), access denied, unknown card, unknown fingerprint.
+- Home Assistant integration: one **switch per person** (access enabled), and the actions
+  `set_access` (person or one of their categories) and `rename_person`. The raw UserID
+  actions are marked advanced.
+- Home Assistant integration: the activity card works for any logged-in user (reading the
+  history no longer needs an administrator).
+- Home Assistant integration: door sensor and door alarm disabled by default when no door
+  contact is wired; buttons use the same connection path as everything else; errors are
+  translated (English, French).
+- Panel: "Device relay" renamed "Reader opens its lock", with an explanation.
+- Blueprints: run actions for a category, open and disarm, lock and arm when leaving, alert
+  on repeated refusals (`blueprints/automation/zkaccess_native`).
+- Emulator: `DeviceState.door_sensors` sets the door contacts of the status record.
+
+## Unreleased
+
 - README: manual installation without HACS (download a release, copy
   `custom_components/zkaccess_native`, restart).
 

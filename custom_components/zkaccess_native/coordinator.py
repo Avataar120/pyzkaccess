@@ -12,14 +12,14 @@ from homeassistant.components import persistent_notification
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_PORT
 from homeassistant.core import Event, HomeAssistant, callback
-from homeassistant.exceptions import HomeAssistantError
+from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.event import async_call_later, async_track_time_change
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 from datetime import datetime
-from pyzkaccess_native import (AccessEvent, DeviceInfo, DoorStatus, RepeatDetector, ZKAccess,
+from pyzkaccess_native import (AccessEvent, DeviceError, DeviceInfo, DoorStatus, RepeatDetector, ZKAccess,
                                ZKConnectionError, ZKError)
 from pyzkaccess_native.events import DENIED_EVENTS, GRANTED_EVENTS
 
@@ -173,6 +173,13 @@ class ZKCoordinator(DataUpdateCoordinator[ZKData]):
     async def _async_update_data(self) -> ZKData:
         try:
             records, raw, enrolled = await self.hass.async_add_executor_job(self._poll)
+        except DeviceError as ex:
+            if ex.code == -14:          # communication password refused: ask the user for it
+                await self.hass.async_add_executor_job(self._connection_failed)
+                raise ConfigEntryAuthFailed(f"{self.client.host} refused the communication password") from ex
+            if self.client.connected:
+                await self.hass.async_add_executor_job(self._connection_failed)
+            raise UpdateFailed(f"cannot reach {self.client.host}: {ex}") from ex
         except (ZKError, OSError) as ex:
             if self.client.connected:  # failed inside a session: close it, retry later
                 await self.hass.async_add_executor_job(self._connection_failed)
@@ -446,8 +453,9 @@ class ZKCoordinator(DataUpdateCoordinator[ZKData]):
 
         try:
             result = await self.hass.async_add_executor_job(job)
-        except ZKError as ex:
-            raise HomeAssistantError(str(ex)) from ex
+        except (ZKError, OSError) as ex:
+            raise HomeAssistantError(translation_domain=DOMAIN, translation_key="device_error",
+                                     translation_placeholders={"error": str(ex)}) from ex
         if refresh:
             await self.async_refresh_snapshot(silent=True)
         return result
@@ -461,7 +469,8 @@ class ZKCoordinator(DataUpdateCoordinator[ZKData]):
         try:
             raw = await self.hass.async_add_executor_job(job)
         except (ZKError, OSError) as ex:
-            raise HomeAssistantError(f"cannot reach {self.client.host}: {ex}") from ex
+            raise HomeAssistantError(translation_domain=DOMAIN, translation_key="unreachable",
+                                     translation_placeholders={"host": self.client.host, "error": str(ex)}) from ex
         self._snapshot_at = time.monotonic()
         if silent:
             self.store.data["known_user_ids"] = sorted({u["Pin"] for u in raw["users"]})
@@ -510,11 +519,11 @@ class ZKCoordinator(DataUpdateCoordinator[ZKData]):
     # ----------------------------------------------------------- identification
     def start_identify(self, person: Optional[int], physical: Optional[int]) -> dict[str, Any]:
         if self.identify is not None:
-            raise HomeAssistantError("an identification is already running")
+            raise HomeAssistantError(translation_domain=DOMAIN, translation_key="identify_running")
         if self.store.data.get("identify_pending"):
-            raise HomeAssistantError("the previous identification is still being undone, try again")
+            raise HomeAssistantError(translation_domain=DOMAIN, translation_key="identify_undoing")
         if self.enrollment is not None:
-            raise HomeAssistantError("an enrollment is running")
+            raise HomeAssistantError(translation_domain=DOMAIN, translation_key="enroll_running")
         self.identify = {"state": "waiting", "step": 1, "person": person, "physical": physical,
                          "started": time.monotonic()}
         self._identify_notify()

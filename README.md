@@ -359,7 +359,13 @@ in that folder).
    searches for devices: UDP broadcast on Home Assistant's network, and TCP port 4370 on
    its subnet plus any range you add (e.g. `192.168.5.0/24` for a device on another subnet
    or VLAN). Pick the device (or enter its address), then the communication password if any.
+   A ZKTeco device that gets its address by DHCP on Home Assistant's network is also offered
+   by itself (*Discovered*), and its new address is picked up when it changes.
 2. Open **Access control** in the sidebar.
+
+The device's address, port or password changed? **Settings → Devices & services → ZKAccess
+Native → ⋮ → Reconfigure**: everything else (people, phones, history) is kept. When the
+device refuses the communication password, Home Assistant asks for the new one.
 
 ### People and action categories
 
@@ -445,7 +451,8 @@ unknown, the page shows its number and writes it to the chosen person and catego
 ### Dashboard card
 
 The integration also provides a card with the access activity, the same rows as the
-panel's *Activity* tab, updated live (it needs an administrator, like the panel):
+panel's *Activity* tab, updated live. Any logged-in user can display it (managing people stays
+reserved to administrators, in the panel):
 
 ```yaml
 type: custom:zkaccess-activity-card
@@ -466,6 +473,7 @@ person: 12               # optional: one person only
 | `sensor.<device>_people`, `_fingerprints`, `_cards` | counters |
 | `button.<device>_open_door_N` | pulse the lock relay |
 | `button.<device>_sync_clock` | set the device clock |
+| `switch.<device>_access_<person>` | one per person: access enabled / disabled (same as the panel toggle); usable in automations, e.g. a schedule |
 | `binary_sensor.<device>_connected` | device reachable (stays available, so you can alert on it) |
 | `sensor.<device>_clock_offset` | device clock drift before the last sync, in seconds |
 
@@ -483,8 +491,15 @@ Every access event is also fired on the bus as **`zkaccess_native_access`** with
 | `phone` | `Pixel 9` | name of the phone (phone access only) |
 | `user_id`, `card`, `door`, `event`, `event_name`, `time`, `device_id` | | raw details |
 
-Actions: `zkaccess_native.set_user`, `delete_user`, `grant`, `revoke`, `open_door`,
-`sync_clock`, `list_users` (returns the users) and `backup`.
+Actions:
+
+- `zkaccess_native.set_access` (person, optional category, enabled): enable or disable a
+  person, or one of their categories; `rename_person`; `open_door`; `sync_clock`; `backup`.
+- Advanced, on raw UserIDs outside the person / category model: `set_user`, `delete_user`,
+  `grant`, `revoke`, `list_users` (returns the users). Prefer the panel or `set_access`.
+
+The door sensor and its alarm are disabled by default when the device reports no door
+contact wired; enable them in the entity settings if you wire one later.
 
 Options: polling interval (default 1 s, 0.3 to 3 s), door open duration, clock sync on connection.
 The device clock is also synced every night at 04:00.
@@ -493,6 +508,21 @@ The device clock is also synced every night at 04:00.
 and addresses are removed).
 
 ### Example automations
+
+**Without YAML**, in the automation editor: *Add trigger → Device → your reader*, then
+*Category … presented* (optionally by one person), *Access denied*, *Unknown card presented*
+or *Unknown fingerprint presented*. The access is in `trigger.event.data`.
+
+**Blueprints** (*Settings → Automations → Blueprints → Import blueprint*, paste the link):
+
+| Blueprint | Does |
+|---|---|
+| [Run actions for a category](https://github.com/Avataar120/pyzkaccess/blob/main/blueprints/automation/zkaccess_native/category_actions.yaml) | your actions when a category is presented, optionally by one person |
+| [Open the door and disarm](https://github.com/Avataar120/pyzkaccess/blob/main/blueprints/automation/zkaccess_native/open_and_disarm.yaml) | unlock a lock and/or pulse a strike switch, disarm the alarm, light at night |
+| [Lock and arm when leaving](https://github.com/Avataar120/pyzkaccess/blob/main/blueprints/automation/zkaccess_native/leave_lock_and_arm.yaml) | lock the doors and arm the alarm (away, home, night or vacation) |
+| [Alert on repeated refusals](https://github.com/Avataar120/pyzkaccess/blob/main/blueprints/automation/zkaccess_native/refusals_alert.yaml) | your alert actions after N refusals within M minutes |
+
+**In YAML**:
 
 A known fingerprint, card, code or phone gives `result: granted` when its category has
 **Device relay** checked (the device released its own lock output) and `result: action`

@@ -33,3 +33,28 @@ list_users:
   fields: {device_id: *device}
 backup:
   fields: {device_id: *device}
+set_access:
+  fields:
+    device_id: *device
+    person:
+      required: true
+      selector:
+        number: {min: 1, max: 99999, mode: box}
+    category:
+      selector:
+        number: {min: 0, max: 9, mode: box}
+    enabled:
+      required: true
+      selector:
+        boolean: {}
+rename_person:
+  fields:
+    device_id: *device
+    person:
+      required: true
+      selector:
+        number: {min: 1, max: 99999, mode: box}
+    name:
+      required: true
+      selector:
+        text: {}

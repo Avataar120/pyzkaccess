@@ -30,6 +30,30 @@
           "host": "IP address of the device.",
           "password": "Leave empty when there is no communication password."
         }
+      },
+      "dhcp_confirm": {
+        "title": "ZKTeco device found",
+        "description": "A ZKTeco device was found at {host}. Set it up?"
+      },
+      "reconfigure": {
+        "title": "Device address",
+        "description": "Change the address, port or communication password. People, categories, phones and history are kept.",
+        "data": {
+          "host": "Host",
+          "port": "Port",
+          "password": "Communication password"
+        },
+        "data_description": {
+          "host": "IP address of the device.",
+          "password": "Leave empty when there is no communication password."
+        }
+      },
+      "reauth_confirm": {
+        "title": "Communication password",
+        "description": "The device at {host} refuses the communication password. Enter the current one (empty when none).",
+        "data": {
+          "password": "Communication password"
+        }
       }
     },
     "error": {
@@ -39,8 +63,13 @@
       "no_devices": "No device found. Add the device's range (e.g. 192.168.5.0/24), or submit again unchanged to enter its address."
     },
     "abort": {
-      "already_configured": "This device is already configured."
-    }
+      "already_configured": "This device is already configured.",
+      "reconfigure_successful": "The device settings were updated.",
+      "reauth_successful": "The password was updated.",
+      "wrong_device": "Another device answers at this address (different serial number).",
+      "cannot_connect": "Cannot connect to the device."
+    },
+    "flow_title": "{name}"
   },
   "options": {
     "step": {
@@ -110,7 +139,7 @@
   "services": {
     "set_user": {
       "name": "Create or update a user",
-      "description": "Creates the UserID or updates the given fields; other fields are kept.",
+      "description": "Creates the UserID or updates the given fields; other fields are kept. Advanced: acts on a raw UserID, outside the person / category model; prefer the panel or Set access.",
       "fields": {
         "device_id": {
           "name": "Device",
@@ -136,7 +165,7 @@
     },
     "delete_user": {
       "name": "Delete a user",
-      "description": "Deletes a UserID with its fingerprints and door authorizations.",
+      "description": "Deletes a UserID with its fingerprints and door authorizations. Advanced: acts on a raw UserID, outside the person / category model; prefer the panel or Set access.",
       "fields": {
         "device_id": {
           "name": "Device",
@@ -150,7 +179,7 @@
     },
     "grant": {
       "name": "Grant access",
-      "description": "Allows a UserID to open doors during a time zone.",
+      "description": "Allows a UserID to open doors during a time zone. Advanced: acts on a raw UserID, outside the person / category model; prefer the panel or Set access.",
       "fields": {
         "device_id": {
           "name": "Device",
@@ -172,7 +201,7 @@
     },
     "revoke": {
       "name": "Revoke access",
-      "description": "Removes every door authorization of a UserID.",
+      "description": "Removes every door authorization of a UserID. Advanced: acts on a raw UserID, outside the person / category model; prefer the panel or Set access.",
       "fields": {
         "device_id": {
           "name": "Device",
@@ -231,6 +260,46 @@
           "description": "The ZKAccess device."
         }
       }
+    },
+    "set_access": {
+      "name": "Set access",
+      "description": "Enable or disable a person's access, or only one of their categories (the device refuses the credentials, Home Assistant treats them as denied).",
+      "fields": {
+        "device_id": {
+          "name": "Device",
+          "description": "The ZKAccess device."
+        },
+        "person": {
+          "name": "Person",
+          "description": "Person number (shown in the panel)."
+        },
+        "category": {
+          "name": "Category",
+          "description": "Category digit (0-9). Empty: the whole person."
+        },
+        "enabled": {
+          "name": "Enabled",
+          "description": "On to allow, off to refuse."
+        }
+      }
+    },
+    "rename_person": {
+      "name": "Rename a person",
+      "description": "Change the name of a person (written to the device for all their UserIDs).",
+      "fields": {
+        "device_id": {
+          "name": "Device",
+          "description": "The ZKAccess device."
+        },
+        "person": {
+          "name": "Person",
+          "description": "Person number (shown in the panel)."
+        },
+        "name": {
+          "name": "Name",
+          "description": "New name (24 characters at most)."
+        }
+      }
     }
   },
   "selector": {
@@ -238,6 +307,37 @@
       "options": {
         "manual": "Enter the address"
       }
+    }
+  },
+  "device_automation": {
+    "trigger_type": {
+      "category": "Category {subtype} presented",
+      "denied": "Access denied",
+      "unknown_card": "Unknown card presented",
+      "unknown_fingerprint": "Unknown fingerprint presented"
+    }
+  },
+  "exceptions": {
+    "not_loaded": {
+      "message": "{device} is not a loaded ZKAccess device."
+    },
+    "unknown_person": {
+      "message": "No person number {person} on this device."
+    },
+    "device_error": {
+      "message": "Device error: {error}"
+    },
+    "unreachable": {
+      "message": "Cannot reach {host}: {error}"
+    },
+    "identify_running": {
+      "message": "A finger identification is running."
+    },
+    "identify_undoing": {
+      "message": "The previous identification is still being undone, try again in a few seconds."
+    },
+    "enroll_running": {
+      "message": "An enrollment is running."
     }
   }
 }

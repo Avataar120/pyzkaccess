@@ -20,6 +20,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ZKConfigEntry,
     add(entities)
 
 
+def _no_sensor(coordinator, door: int) -> bool:
+    """The device reports no door contact for this door (sensor type "none")."""
+    status = coordinator.data.status if coordinator.data else None
+    return status is not None and status.door_open(door) is None
+
+
 class ZKDoorSensor(ZKEntity, BinarySensorEntity):
     """State of the door contact wired to the device (unknown when none is configured)."""
 
@@ -30,6 +36,8 @@ class ZKDoorSensor(ZKEntity, BinarySensorEntity):
         super().__init__(coordinator, f"door_{door}")
         self.door = door
         self._attr_translation_placeholders = {"door": str(door)}
+        # No contact wired: the entity would stay "unknown"; it can still be enabled by hand.
+        self._attr_entity_registry_enabled_default = not _no_sensor(coordinator, door)
 
     @property
     def is_on(self) -> bool | None:
@@ -46,6 +54,8 @@ class ZKAlarm(ZKEntity, BinarySensorEntity):
         super().__init__(coordinator, f"alarm_{door}")
         self.door = door
         self._attr_translation_placeholders = {"door": str(door)}
+        # The alarm (forced open, open too long) relies on the door contact too.
+        self._attr_entity_registry_enabled_default = not _no_sensor(coordinator, door)
 
     @property
     def is_on(self) -> bool | None:

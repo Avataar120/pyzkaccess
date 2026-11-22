@@ -30,6 +30,30 @@
           "host": "Adresse IP de l'appareil.",
           "password": "Laisser vide si aucun mot de passe de communication."
         }
+      },
+      "dhcp_confirm": {
+        "title": "Appareil ZKTeco trouvé",
+        "description": "Un appareil ZKTeco a été trouvé à l'adresse {host}. Le configurer ?"
+      },
+      "reconfigure": {
+        "title": "Adresse de l'appareil",
+        "description": "Modifier l'adresse, le port ou le mot de passe de communication. Personnes, catégories, téléphones et historique sont conservés.",
+        "data": {
+          "host": "Hôte",
+          "port": "Port",
+          "password": "Mot de passe de communication"
+        },
+        "data_description": {
+          "host": "Adresse IP de l'appareil.",
+          "password": "Laisser vide si aucun mot de passe de communication."
+        }
+      },
+      "reauth_confirm": {
+        "title": "Mot de passe de communication",
+        "description": "L'appareil {host} refuse le mot de passe de communication. Saisissez le mot de passe actuel (vide s'il n'y en a pas).",
+        "data": {
+          "password": "Mot de passe de communication"
+        }
       }
     },
     "error": {
@@ -39,8 +63,13 @@
       "no_devices": "Aucun appareil trouvé. Ajoutez la plage du boîtier (ex. 192.168.5.0/24), ou validez à nouveau sans rien changer pour saisir son adresse."
     },
     "abort": {
-      "already_configured": "Cet appareil est déjà configuré."
-    }
+      "already_configured": "Cet appareil est déjà configuré.",
+      "reconfigure_successful": "Les réglages de l'appareil ont été mis à jour.",
+      "reauth_successful": "Le mot de passe a été mis à jour.",
+      "wrong_device": "Un autre appareil répond à cette adresse (numéro de série différent).",
+      "cannot_connect": "Connexion impossible à l'appareil."
+    },
+    "flow_title": "{name}"
   },
   "options": {
     "step": {
@@ -110,7 +139,7 @@
   "services": {
     "set_user": {
       "name": "Créer ou modifier un utilisateur",
-      "description": "Crée le UserID ou modifie les champs indiqués ; les autres sont conservés.",
+      "description": "Crée le UserID ou modifie les champs indiqués ; les autres sont conservés. Avancé : agit sur un UserID brut, hors du modèle personnes / catégories ; préférez le panneau ou « Régler l'accès ».",
       "fields": {
         "device_id": {
           "name": "Appareil",
@@ -136,7 +165,7 @@
     },
     "delete_user": {
       "name": "Supprimer un utilisateur",
-      "description": "Supprime un UserID, ses empreintes et ses autorisations.",
+      "description": "Supprime un UserID, ses empreintes et ses autorisations. Avancé : agit sur un UserID brut, hors du modèle personnes / catégories ; préférez le panneau ou « Régler l'accès ».",
       "fields": {
         "device_id": {
           "name": "Appareil",
@@ -150,7 +179,7 @@
     },
     "grant": {
       "name": "Autoriser l'accès",
-      "description": "Autorise un UserID à ouvrir des portes pendant une plage horaire.",
+      "description": "Autorise un UserID à ouvrir des portes pendant une plage horaire. Avancé : agit sur un UserID brut, hors du modèle personnes / catégories ; préférez le panneau ou « Régler l'accès ».",
       "fields": {
         "device_id": {
           "name": "Appareil",
@@ -172,7 +201,7 @@
     },
     "revoke": {
       "name": "Retirer l'accès",
-      "description": "Supprime toutes les autorisations d'un UserID.",
+      "description": "Supprime toutes les autorisations d'un UserID. Avancé : agit sur un UserID brut, hors du modèle personnes / catégories ; préférez le panneau ou « Régler l'accès ».",
       "fields": {
         "device_id": {
           "name": "Appareil",
@@ -231,6 +260,46 @@
           "description": "L'appareil ZKAccess."
         }
       }
+    },
+    "set_access": {
+      "name": "Régler l'accès",
+      "description": "Active ou désactive l'accès d'une personne, ou seulement une de ses catégories (le lecteur refuse ses identifiants, Home Assistant les traite comme refusés).",
+      "fields": {
+        "device_id": {
+          "name": "Appareil",
+          "description": "L'appareil ZKAccess."
+        },
+        "person": {
+          "name": "Personne",
+          "description": "Numéro de la personne (affiché dans le panneau)."
+        },
+        "category": {
+          "name": "Catégorie",
+          "description": "Chiffre de la catégorie (0-9). Vide : toute la personne."
+        },
+        "enabled": {
+          "name": "Activé",
+          "description": "Activé pour autoriser, désactivé pour refuser."
+        }
+      }
+    },
+    "rename_person": {
+      "name": "Renommer une personne",
+      "description": "Change le nom d'une personne (écrit dans le lecteur pour tous ses UserID).",
+      "fields": {
+        "device_id": {
+          "name": "Appareil",
+          "description": "L'appareil ZKAccess."
+        },
+        "person": {
+          "name": "Personne",
+          "description": "Numéro de la personne (affiché dans le panneau)."
+        },
+        "name": {
+          "name": "Nom",
+          "description": "Nouveau nom (24 caractères au plus)."
+        }
+      }
     }
   },
   "selector": {
@@ -238,6 +307,37 @@
       "options": {
         "manual": "Saisir l'adresse"
       }
+    }
+  },
+  "device_automation": {
+    "trigger_type": {
+      "category": "Catégorie {subtype} présentée",
+      "denied": "Accès refusé",
+      "unknown_card": "Carte inconnue présentée",
+      "unknown_fingerprint": "Doigt inconnu présenté"
+    }
+  },
+  "exceptions": {
+    "not_loaded": {
+      "message": "{device} n'est pas un appareil ZKAccess chargé."
+    },
+    "unknown_person": {
+      "message": "Aucune personne n° {person} sur cet appareil."
+    },
+    "device_error": {
+      "message": "Erreur du lecteur : {error}"
+    },
+    "unreachable": {
+      "message": "Lecteur {host} injoignable : {error}"
+    },
+    "identify_running": {
+      "message": "Une identification de doigt est en cours."
+    },
+    "identify_undoing": {
+      "message": "L'identification précédente est encore en cours d'annulation, réessayez dans quelques secondes."
+    },
+    "enroll_running": {
+      "message": "Un enregistrement d'empreinte est en cours."
     }
   }
 }

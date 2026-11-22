@@ -71,6 +71,8 @@ class DeviceState:
         # Like the MA500 (firmware 6.64): a DELETE_DATA with more than one condition is
         # acknowledged but deletes nothing. Set True to emulate devices that honour it.
         self.multi_condition_delete = multi_condition_delete
+        # Door contact per door in the status record: 0 = none wired, 1 = closed, 2 = open.
+        self.door_sensors = [1, 0, 0, 0]
 
     # -- helpers used by tests ----------------------------------------------
     def push_event(self, event: int, user_id: int = 0, card: int = 0, door: int = 1,
@@ -141,7 +143,7 @@ class DeviceState:
     def rtlog(self) -> bytes:
         events, self.pending_events = self.pending_events, []
         stamp = codec.encode_datetime(datetime.now()).to_bytes(4, "little")
-        status = bytes(4) + bytes([1, 0, 0, 0]) + bytes([0, 0, 255, 0]) + stamp
+        status = bytes(4) + bytes(self.door_sensors[:4]) + bytes([0, 0, 255, 0]) + stamp
         return b"".join(events) + status
 
     def control(self, payload: bytes) -> None:

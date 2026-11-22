@@ -1,15 +1,16 @@
 """Config and options flows."""
 from __future__ import annotations
 
-from typing import Any
-
 import ipaddress
+from collections.abc import Mapping
+from typing import Any
 
 import voluptuous as vol
 from homeassistant.components import network
 from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResult, OptionsFlow
 from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_PORT
 from homeassistant.core import callback
+from homeassistant.helpers.service_info.dhcp import DhcpServiceInfo
 from homeassistant.helpers.selector import (SelectOptionDict, SelectSelector, SelectSelectorConfig,
                                             SelectSelectorMode)
 from pyzkaccess_native import DeviceError, DiscoveredDevice, ZKAccess, ZKError, discover, scan
@@ -169,6 +170,81 @@ class ZKAccessConfigFlow(ConfigFlow, domain=DOMAIN):
         suggested = user_input or ({CONF_HOST: self._host} if self._host else {})
         return self.async_show_form(step_id="connect", data_schema=self.add_suggested_values_to_schema(
             schema, suggested), errors=errors)
+
+    # ------------------------------------------------------------ DHCP discovery
+    async def async_step_dhcp(self, discovery_info: DhcpServiceInfo) -> ConfigFlowResult:
+        """A ZKTeco device seen on the network (MAC prefix 00:17:61). A device already set
+        up gets its new address; a new one is offered for setup."""
+        host = discovery_info.ip
+        try:
+            info = await self.hass.async_add_executor_job(_probe, host, DEFAULT_PORT, "")
+        except DeviceError as ex:
+            if ex.code != -14:
+                return self.async_abort(reason="cannot_connect")
+            info = None                                  # password protected: identified later
+        except (ZKError, OSError):
+            return self.async_abort(reason="cannot_connect")
+        if info and info.serial_number:
+            await self.async_set_unique_id(info.serial_number)
+            self._abort_if_unique_id_configured(updates={CONF_HOST: host})
+        self._host = host
+        name = ((info.device_name or "").strip() if info else "") or (info.serial_number if info else None) or host
+        self.context["title_placeholders"] = {"name": name}
+        return await self.async_step_dhcp_confirm()
+
+    async def async_step_dhcp_confirm(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        if user_input is not None:
+            return await self.async_step_connect()
+        self._set_confirm_only()
+        return self.async_show_form(step_id="dhcp_confirm",
+                                    description_placeholders={"host": self._host or ""})
+
+    # ------------------------------------------------- new address, new password
+    async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Change the address, port or password of a device already set up (everything else,
+        people, phones, history, is kept)."""
+        entry = self._get_reconfigure_entry()
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            data = {**entry.data, **user_input}
+            errors, info = await self._check(data)
+            if not errors:
+                if info.serial_number and entry.unique_id and info.serial_number != entry.unique_id:
+                    return self.async_abort(reason="wrong_device")
+                return self.async_update_reload_and_abort(entry, data=data)
+        schema = vol.Schema({
+            vol.Required(CONF_HOST): str,
+            vol.Required(CONF_PORT): int,
+            vol.Optional(CONF_PASSWORD, default=""): str,
+        })
+        return self.async_show_form(step_id="reconfigure", data_schema=self.add_suggested_values_to_schema(
+            schema, user_input or dict(entry.data)), errors=errors)
+
+    async def async_step_reauth(self, entry_data: Mapping[str, Any]) -> ConfigFlowResult:
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """The device refuses the communication password: ask for the new one."""
+        entry = self._get_reauth_entry()
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            data = {**entry.data, CONF_PASSWORD: user_input.get(CONF_PASSWORD, "")}
+            errors, _info = await self._check(data)
+            if not errors:
+                return self.async_update_reload_and_abort(entry, data=data)
+        return self.async_show_form(step_id="reauth_confirm", data_schema=vol.Schema({
+            vol.Optional(CONF_PASSWORD, default=""): str}), errors=errors,
+            description_placeholders={"host": entry.data.get(CONF_HOST, "")})
+
+    async def _check(self, data: Mapping[str, Any]):
+        try:
+            info = await self.hass.async_add_executor_job(
+                _probe, data[CONF_HOST], data[CONF_PORT], data.get(CONF_PASSWORD, ""))
+        except DeviceError as ex:
+            return {"base": "invalid_auth" if ex.code == -14 else "cannot_connect"}, None
+        except (ZKError, OSError):
+            return {"base": "cannot_connect"}, None
+        return {}, info
 
     @staticmethod
     @callback

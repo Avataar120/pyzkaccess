@@ -18,7 +18,7 @@ from .coordinator import ZKCoordinator
 from .panel import async_register_panel, async_rename_panel, async_unregister_panel
 from .store import AccessStore
 
-PLATFORMS = [Platform.BINARY_SENSOR, Platform.BUTTON, Platform.EVENT, Platform.SENSOR]
+PLATFORMS = [Platform.BINARY_SENSOR, Platform.BUTTON, Platform.EVENT, Platform.SENSOR, Platform.SWITCH]
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 type ZKConfigEntry = ConfigEntry[ZKCoordinator]
@@ -40,6 +40,12 @@ SCHEMAS = {
     "sync_clock": vol.Schema(_BASE),
     "backup": vol.Schema(_BASE),
     "list_users": vol.Schema(_BASE),
+    # Person / category model (prefer these to the raw UserID services above).
+    "set_access": vol.Schema({**_BASE, vol.Required("person"): vol.All(vol.Coerce(int), vol.Range(1, 99_999)),
+                              vol.Optional("category"): vol.All(vol.Coerce(int), vol.Range(0, 9)),
+                              vol.Required("enabled"): cv.boolean}),
+    "rename_person": vol.Schema({**_BASE, vol.Required("person"): vol.All(vol.Coerce(int), vol.Range(1, 99_999)),
+                                 vol.Required("name"): vol.All(cv.string, vol.Length(min=1, max=24))}),
 }
 
 
@@ -50,7 +56,8 @@ def _coordinator(hass: HomeAssistant, device_id: str) -> ZKCoordinator:
             entry = hass.config_entries.async_get_entry(entry_id)
             if entry and entry.domain == DOMAIN and hasattr(entry, "runtime_data"):
                 return entry.runtime_data
-    raise ServiceValidationError(f"{device_id} is not a loaded ZKAccess device")
+    raise ServiceValidationError(translation_domain=DOMAIN, translation_key="not_loaded",
+                                 translation_placeholders={"device": device_id})
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
@@ -63,6 +70,24 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         d = call.data
         service = call.service
 
+        if service == "set_access":
+            person = d["person"]
+            if not any(p["num"] == person for p in (coord.snapshot or {}).get("persons", [])):
+                raise ServiceValidationError(translation_domain=DOMAIN, translation_key="unknown_person",
+                                             translation_placeholders={"person": str(person)})
+            if "category" in d:
+                await coord.async_run(coord.manager.category_enable, person, d["category"], d["enabled"])
+            else:
+                await coord.async_run(coord.manager.person_enable, person, d["enabled"])
+            return None
+        if service == "rename_person":
+            person = d["person"]
+            if not any(p["num"] == person for p in (coord.snapshot or {}).get("persons", [])):
+                raise ServiceValidationError(translation_domain=DOMAIN, translation_key="unknown_person",
+                                             translation_placeholders={"person": str(person)})
+            ha_person = coord.store.person_meta(person).get("ha_person")
+            await coord.async_run(coord.manager.person_save, person, d["name"], ha_person)
+            return None
         if service == "backup":
             name = await coord.async_run(coord.manager.backup_create, "service", refresh=False)
             return {"file": name}

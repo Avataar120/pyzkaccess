@@ -1,0 +1,45 @@
+blueprint:
+  name: ZKAccess - run actions for a category
+  description: >-
+    When a known fingerprint, card, code or phone of the chosen category is presented on the
+    reader (optionally by one person only), run your actions. Works whether or not the
+    category opens the reader's own lock. The access is available in the actions as
+    `trigger.event.data` (person_name, category, method, gesture...).
+  domain: automation
+  source_url: https://github.com/Avataar120/pyzkaccess/blob/main/blueprints/automation/zkaccess_native/category_actions.yaml
+  input:
+    reader:
+      name: Reader
+      selector:
+        device:
+          integration: zkaccess_native
+    category:
+      name: Category digit
+      description: The digit of the category (0 = Open; see the panel's Settings).
+      default: 0
+      selector:
+        number: {min: 0, max: 9, mode: box}
+    person:
+      name: Only this person (optional)
+      description: Person number shown in the panel; 0 = anyone.
+      default: 0
+      selector:
+        number: {min: 0, max: 99999, mode: box}
+    actions:
+      name: Actions
+      selector:
+        action: {}
+mode: queued
+variables:
+  reader: !input reader
+  category: !input category
+  person: !input person
+triggers:
+  - trigger: event
+    event_type: zkaccess_native_access
+conditions:
+  - "{{ trigger.event.data.device_id == reader }}"
+  - "{{ trigger.event.data.result in ['granted', 'action'] }}"
+  - "{{ trigger.event.data.category_digit | int(-1) == category | int }}"
+  - "{{ person | int == 0 or trigger.event.data.person | int(-1) == person | int }}"
+actions: !input actions

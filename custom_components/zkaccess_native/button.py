@@ -4,9 +4,7 @@ from __future__ import annotations
 from homeassistant.components.button import ButtonEntity
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from pyzkaccess_native import ZKError
 
 from . import ZKConfigEntry
 from .const import CONF_OPEN_SECONDS, DEFAULT_OPEN_SECONDS
@@ -25,14 +23,8 @@ class _ZKButton(ZKEntity, ButtonEntity):
         raise NotImplementedError
 
     async def async_press(self) -> None:
-        def run():
-            if not self.coordinator.client.connected:
-                self.coordinator.client.connect()
-            self._action()
-        try:
-            await self.hass.async_add_executor_job(run)
-        except ZKError as ex:
-            raise HomeAssistantError(str(ex)) from ex
+        # Same path as every other operation: client lock, connection, translated errors.
+        await self.coordinator.async_run(self._action, refresh=False)
 
 
 class ZKOpenDoor(_ZKButton):

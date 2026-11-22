@@ -33,7 +33,8 @@ const I18N = {
     unplaced: "Fingerprints not placed on the hand",
     unplaced_help: "Enrolled on the keypad: tell which finger it is so it shows on the hand.",
     place_on: "Finger", slot: "UserID {u} · slot {s}",
-    categories_of: "Categories", user_id: "UserID", relay: "Device relay", relay_yes: "Yes", relay_no: "No (Home Assistant only)",
+    categories_of: "Categories", user_id: "UserID", relay: "Reader opens its lock", relay_yes: "Yes", relay_no: "No (Home Assistant only)",
+    relay_help: "“Reader opens its lock”: the reader itself releases the lock wired to it (event “granted”). Unchecked, the reader refuses on purpose and only Home Assistant reacts (event “action”). Automations work either way: react to both.",
     creds_title: "Cards and keypad codes",
     creds_help: "One card and one code per category. On the keypad, the code is typed after the UserID, so the same code can be reused in every category.",
     replace: "Replace", remove: "Remove", set_code: "Set a code", change: "Change", code_set: "Set (••••)",
@@ -44,7 +45,7 @@ const I18N = {
     delete_person_btn: "Delete {name}…",
     confirm_delete_person: "Delete {name} and all their credentials?",
     add_fingerprint: "Add a fingerprint", category_of_finger: "Category of this finger",
-    no_relay_note: "“{c}” does not trigger the device relay: only Home Assistant reacts.",
+    no_relay_note: "With “{c}” the reader does not open its own lock: only Home Assistant reacts.",
     on_keypad: "On the device keypad, type:", admin_code: "admin code", add: "backup fingerprint",
     place_finger: "place the finger <b>3 times</b>", eq_person_cat: "= person <b>{p}</b> + category <b>{d} ({c})</b>",
     start: "Start", waiting: "Waiting for the new fingerprint on the device…", enrolled: "Fingerprint enrolled.",
@@ -133,7 +134,8 @@ const I18N = {
     unplaced: "Empreintes non placées sur la main",
     unplaced_help: "Enregistrées au clavier : indiquez de quel doigt il s'agit pour l'afficher sur la main.",
     place_on: "Doigt", slot: "UserID {u} · emplacement {s}",
-    categories_of: "Catégories", user_id: "UserID", relay: "Relais du lecteur", relay_yes: "Oui", relay_no: "Non (Home Assistant seulement)",
+    categories_of: "Catégories", user_id: "UserID", relay: "Le lecteur ouvre sa gâche", relay_yes: "Oui", relay_no: "Non (Home Assistant seulement)",
+    relay_help: "« Le lecteur ouvre sa gâche » : le lecteur actionne lui-même la gâche câblée sur lui (événement « granted »). Décoché, il refuse volontairement et seul Home Assistant réagit (événement « action »). Les automations fonctionnent dans les deux cas : réagir aux deux.",
     creds_title: "Cartes et codes clavier",
     creds_help: "Une carte et un code par catégorie. Au clavier, le code se tape après le UserID : le même code peut servir dans toutes les catégories.",
     replace: "Remplacer", remove: "Retirer", set_code: "Définir un code", change: "Changer", code_set: "Défini (••••)",
@@ -144,7 +146,7 @@ const I18N = {
     delete_person_btn: "Supprimer {name}…",
     confirm_delete_person: "Supprimer {name} et tous ses identifiants ?",
     add_fingerprint: "Ajouter une empreinte", category_of_finger: "Catégorie de ce doigt",
-    no_relay_note: "« {c} » n'active pas le relais du lecteur : seul Home Assistant réagit.",
+    no_relay_note: "Avec « {c} », le lecteur n'ouvre pas sa propre gâche : seul Home Assistant réagit.",
     on_keypad: "Sur le clavier du lecteur, tapez :", admin_code: "code admin", add: "doigt de secours",
     place_finger: "posez le doigt <b>3 fois</b>", eq_person_cat: "= personne <b>{p}</b> + catégorie <b>{d} ({c})</b>",
     start: "Commencer", waiting: "En attente de la nouvelle empreinte sur le lecteur…", enrolled: "Empreinte enregistrée.",
@@ -1045,7 +1047,7 @@ class ZkAccessPanel extends HTMLElement {
       <button class="btn" data-act="backup-download" data-n="${esc(b.name)}">${this.t("download")}</button>
       <button class="btn" data-act="backup-restore" data-n="${esc(b.name)}">${this.t("restore")}</button></div>`).join("");
     return `<main><div class="cols"><div class="grow">
-      <section class="card tablewrap"><h2>${this.t("action_categories")}</h2><p class="sub">${this.t("categories_help")}</p><p class="sub">${this.t("second_help")}</p><p class="sub">${this.t("toggle_help")}</p>
+      <section class="card tablewrap"><h2>${this.t("action_categories")}</h2><p class="sub">${this.t("categories_help")}</p><p class="sub">${this.t("second_help")}</p><p class="sub">${this.t("toggle_help")}</p><p class="sub">${this.t("relay_help")}</p>
         <datalist id="zk-entities">${Object.keys(this._hass.states).filter((e) => /^(alarm_control_panel|lock|input_boolean|switch|cover|binary_sensor)\./.test(e)).sort().map((e) => `<option value="${e}">`).join("")}</datalist>
         <div class="row" style="margin-bottom:12px"><label class="field" style="flex:1 1 320px">${this.t("numbering")}<select id="numbering">
           <option value="category" ${!this.plain() ? "selected" : ""}>${this.t("numbering_category")}</option>

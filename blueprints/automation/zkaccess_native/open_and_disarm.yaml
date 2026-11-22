@@ -1,0 +1,91 @@
+blueprint:
+  name: ZKAccess - open the door and disarm the alarm
+  description: >-
+    When a known credential of the chosen category (Open by default) is presented: unlock a
+    lock and/or pulse a switch (a door strike on a relay module), disarm an alarm panel and,
+    at night, turn on a light. Leave an input empty to skip it.
+  domain: automation
+  source_url: https://github.com/Avataar120/pyzkaccess/blob/main/blueprints/automation/zkaccess_native/open_and_disarm.yaml
+  input:
+    reader:
+      name: Reader
+      selector:
+        device:
+          integration: zkaccess_native
+    category:
+      name: Category digit
+      default: 0
+      selector:
+        number: {min: 0, max: 9, mode: box}
+    lock:
+      name: Lock to unlock (optional)
+      default: []
+      selector:
+        entity: {domain: lock, multiple: true}
+    strike:
+      name: Switch to pulse (optional)
+      description: "A door strike on a relay: turned on, then off after the pulse."
+      default: []
+      selector:
+        entity: {domain: switch, multiple: true}
+    pulse:
+      name: Pulse duration
+      default: 3
+      selector:
+        number: {min: 1, max: 30, unit_of_measurement: s}
+    alarm:
+      name: Alarm panel to disarm (optional)
+      default: []
+      selector:
+        entity: {domain: alarm_control_panel, multiple: true}
+    alarm_code:
+      name: Alarm code (optional)
+      default: ""
+      selector:
+        text: {type: password}
+    light:
+      name: Light to turn on at night (optional)
+      default: []
+      selector:
+        entity: {domain: light, multiple: true}
+mode: queued
+variables:
+  reader: !input reader
+  category: !input category
+  lock: !input lock
+  strike: !input strike
+  alarm: !input alarm
+  alarm_code: !input alarm_code
+  light: !input light
+triggers:
+  - trigger: event
+    event_type: zkaccess_native_access
+conditions:
+  - "{{ trigger.event.data.device_id == reader }}"
+  - "{{ trigger.event.data.result in ['granted', 'action'] }}"
+  - "{{ trigger.event.data.category_digit | int(-1) == category | int }}"
+actions:
+  - if: "{{ lock | count > 0 }}"
+    then:
+      - action: lock.unlock
+        target: {entity_id: !input lock}
+  - if: "{{ strike | count > 0 }}"
+    then:
+      - action: switch.turn_on
+        target: {entity_id: !input strike}
+      - delay: {seconds: !input pulse}
+      - action: switch.turn_off
+        target: {entity_id: !input strike}
+  - if: "{{ alarm | count > 0 }}"
+    then:
+      - action: alarm_control_panel.alarm_disarm
+        target: {entity_id: !input alarm}
+        data: "{{ {'code': alarm_code} if alarm_code else {} }}"
+  - if:
+      - "{{ light | count > 0 }}"
+      - condition: sun
+        after: sunset
+        before: sunrise
+    then:
+      - action: light.turn_on
+        target: {entity_id: !input light}

@@ -1,0 +1,64 @@
+blueprint:
+  name: ZKAccess - lock and arm when leaving
+  description: >-
+    When a known credential of the chosen category is presented (for example a "Close + arm"
+    finger, or the second presentation of the Open finger): lock the doors and arm the alarm.
+  domain: automation
+  source_url: https://github.com/Avataar120/pyzkaccess/blob/main/blueprints/automation/zkaccess_native/leave_lock_and_arm.yaml
+  input:
+    reader:
+      name: Reader
+      selector:
+        device:
+          integration: zkaccess_native
+    category:
+      name: Category digit
+      default: 9
+      selector:
+        number: {min: 0, max: 9, mode: box}
+    lock:
+      name: Locks to lock (optional)
+      default: []
+      selector:
+        entity: {domain: lock, multiple: true}
+    alarm:
+      name: Alarm panel to arm (optional)
+      default: []
+      selector:
+        entity: {domain: alarm_control_panel, multiple: true}
+    arm_mode:
+      name: Arming mode
+      default: away
+      selector:
+        select:
+          options: [away, home, night, vacation]
+    alarm_code:
+      name: Alarm code (optional)
+      default: ""
+      selector:
+        text: {type: password}
+mode: single
+variables:
+  reader: !input reader
+  category: !input category
+  lock: !input lock
+  alarm: !input alarm
+  arm_mode: !input arm_mode
+  alarm_code: !input alarm_code
+triggers:
+  - trigger: event
+    event_type: zkaccess_native_access
+conditions:
+  - "{{ trigger.event.data.device_id == reader }}"
+  - "{{ trigger.event.data.result in ['granted', 'action'] }}"
+  - "{{ trigger.event.data.category_digit | int(-1) == category | int }}"
+actions:
+  - if: "{{ lock | count > 0 }}"
+    then:
+      - action: lock.lock
+        target: {entity_id: !input lock}
+  - if: "{{ alarm | count > 0 }}"
+    then:
+      - action: "alarm_control_panel.alarm_arm_{{ arm_mode }}"
+        target: {entity_id: !input alarm}
+        data: "{{ {'code': alarm_code} if alarm_code else {} }}"

@@ -20,7 +20,8 @@ ENTRY = vol.Required("entry_id")
 def _coordinator(hass: HomeAssistant, entry_id: str) -> ZKCoordinator:
     entry = hass.config_entries.async_get_entry(entry_id)
     if entry is None or entry.domain != DOMAIN or not hasattr(entry, "runtime_data"):
-        raise HomeAssistantError(f"unknown or unloaded device {entry_id}")
+        raise HomeAssistantError(translation_domain=DOMAIN, translation_key="not_loaded",
+                                 translation_placeholders={"device": entry_id})
     return entry.runtime_data
 
 
@@ -71,7 +72,6 @@ async def _guard(connection, msg, coro) -> None:
 
 # --------------------------------------------------------------------- reading
 @websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/devices"})
-@websocket_api.require_admin
 @callback
 def ws_devices(hass: HomeAssistant, connection, msg) -> None:
     out = []
@@ -96,7 +96,6 @@ async def ws_state(hass: HomeAssistant, connection, msg) -> None:
 
 @websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/history", ENTRY: str,
                                   vol.Optional("limit", default=200): vol.All(int, vol.Range(1, 500))})
-@websocket_api.require_admin
 @callback
 def ws_history(hass: HomeAssistant, connection, msg) -> None:
     coord = _coordinator(hass, msg["entry_id"])
@@ -104,7 +103,6 @@ def ws_history(hass: HomeAssistant, connection, msg) -> None:
 
 
 @websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/subscribe", ENTRY: str})
-@websocket_api.require_admin
 @callback
 def ws_subscribe(hass: HomeAssistant, connection, msg) -> None:
     """Push access events and "changed" notices until the panel unsubscribes."""
@@ -231,7 +229,7 @@ async def ws_enroll_start(hass, connection, msg) -> None:
 
     async def run():
         if coord.identify is not None:
-            raise HomeAssistantError("a finger identification is running")
+            raise HomeAssistantError(translation_domain=DOMAIN, translation_key="identify_running")
         user_id, baseline = await coord.async_run(coord.manager.enroll_start, msg["person"], msg["digit"])
         enr = coord.start_enrollment(user_id, baseline, msg.get("physical"))
         return {"user_id": user_id, "state": enr["state"]}

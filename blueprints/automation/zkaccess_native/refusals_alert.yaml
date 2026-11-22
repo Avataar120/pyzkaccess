@@ -1,0 +1,59 @@
+blueprint:
+  name: ZKAccess - alert on repeated refusals
+  description: >-
+    When the reader refuses several attempts in a short time (unknown fingers or cards,
+    people or categories switched off), run your alert actions: a notification, a camera
+    snapshot, a siren... The last refusal is available as `trigger.event.data`.
+  domain: automation
+  source_url: https://github.com/Avataar120/pyzkaccess/blob/main/blueprints/automation/zkaccess_native/refusals_alert.yaml
+  input:
+    reader:
+      name: Reader
+      selector:
+        device:
+          integration: zkaccess_native
+    count:
+      name: Number of refusals
+      default: 3
+      selector:
+        number: {min: 1, max: 10, mode: box}
+    window:
+      name: Within (minutes)
+      default: 1
+      selector:
+        number: {min: 1, max: 60, unit_of_measurement: min}
+    actions:
+      name: Alert actions
+      selector:
+        action: {}
+mode: single
+max_exceeded: silent
+variables:
+  reader: !input reader
+  count: !input count
+  window: !input window
+triggers:
+  - trigger: event
+    event_type: zkaccess_native_access
+    event_data:
+      result: denied
+conditions:
+  - "{{ trigger.event.data.device_id == reader }}"
+actions:
+  # The first refusal started this run; wait for the others within the window.
+  - repeat:
+      count: "{{ count | int - 1 }}"
+      sequence:
+        - wait_for_trigger:
+            - trigger: event
+              event_type: zkaccess_native_access
+              event_data:
+                result: denied
+                device_id: "{{ reader }}"
+          timeout:
+            minutes: "{{ window | int }}"
+          continue_on_timeout: true
+        - if: "{{ wait.trigger is none }}"
+          then:
+            - stop: Not enough refusals in the window
+  - sequence: !input actions
