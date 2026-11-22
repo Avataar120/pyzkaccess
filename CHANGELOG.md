@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- README: manual installation without HACS (download a release, copy
+  `custom_components/zkaccess_native`, restart).
+
 ## 0.4.2 - 2026-11-22
 
 - Panel: no browser error when its script is loaded again (e.g. after renaming it).

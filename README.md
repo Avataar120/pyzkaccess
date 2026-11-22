@@ -320,14 +320,46 @@ cards and codes without any YAML.
 
 ### Install
 
+**With HACS** (no need to wait for the default HACS list):
+
 1. HACS → ⋮ → **Custom repositories** → add `https://github.com/Avataar120/pyzkaccess`,
    type **Integration**.
 2. Install **ZKAccess Native** and restart Home Assistant.
-3. **Settings → Devices & services → Add integration → ZKAccess Native**. The integration
+
+**By hand** (without HACS):
+
+1. Download the latest release from
+   [Releases](https://github.com/Avataar120/pyzkaccess/releases/latest)
+   (*Source code (zip)*) and unzip it.
+2. Copy its folder `custom_components/zkaccess_native` into the `custom_components` folder of
+   your Home Assistant configuration (create it if needed), so that you get
+   `config/custom_components/zkaccess_native/manifest.json`. With the *Samba share*, *File
+   editor* or *Studio Code Server* add-on, or over SSH:
+
+   ```sh
+   cd /config
+   wget -O zkaccess.zip https://github.com/Avataar120/pyzkaccess/archive/refs/tags/vX.Y.Z.zip
+   unzip zkaccess.zip
+   mkdir -p custom_components
+   cp -r pyzkaccess-X.Y.Z/custom_components/zkaccess_native custom_components/
+   rm -rf zkaccess.zip pyzkaccess-X.Y.Z
+   ```
+
+   (replace `X.Y.Z` with the release number, e.g. `0.4.2`).
+3. Restart Home Assistant. It installs the `pyzkaccess-native` library from PyPI by itself
+   (internet access needed at that first start).
+
+To update by hand, replace the `zkaccess_native` folder the same way and restart: your
+people, categories, phones and backups are kept (they live in Home Assistant's storage, not
+in that folder).
+
+**Then:**
+
+1. **Settings → Devices & services → Add integration → ZKAccess Native**. The integration
    searches for devices: UDP broadcast on Home Assistant's network, and TCP port 4370 on
    its subnet plus any range you add (e.g. `192.168.5.0/24` for a device on another subnet
    or VLAN). Pick the device (or enter its address), then the communication password if any.
-4. Open **Access control** in the sidebar.
+2. Open **Access control** in the sidebar.
 
 ### People and action categories
 
