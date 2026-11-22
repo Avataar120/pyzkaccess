@@ -18,6 +18,10 @@ RETRY_MIN_SECONDS = 5  # first wait after a failed connection, doubled after eac
 RETRY_MAX_SECONDS = 60
 #: How long the enrollment wizard waits for a new fingerprint (seconds).
 ENROLL_TIMEOUT_SECONDS = 300
+IDENTIFY_TIMEOUT_SECONDS = 60  # per step of a finger identification
+# Temporary UserIDs used to tell apart the fingers of one UserID during an identification:
+# each template gets its own UserID, without access rights. Hidden from the panel.
+IDENTIFY_PINS = range(9990, 10000)
 #: Number of access events kept for the activity log.
 HISTORY_SIZE = 500
 

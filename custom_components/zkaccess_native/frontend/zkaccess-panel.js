@@ -100,6 +100,19 @@ const I18N = {
     on_hand: "Finger on the hand", not_placed: "— not placed —", nfc_tag: "NFC tag “{n}”", reload: "Reload from the device",
     relay_confirm: "These UserIDs will lose the right to open the door (the device will refuse them; Home Assistant will still receive their actions): {ids}. Continue?",
     confirm: "Confirm",
+    identify: "Identify a finger", identify_title: "Identify a finger",
+    identify_existing: "Already enrolled? Identify it on the reader",
+    identify_note: "While identifying, the reader is only used to recognize the finger: its accesses run no automation and are not logged (stops after 60 s without a finger). The device itself may still drive its own lock output.",
+    identify_wait: "Place the finger on the reader…",
+    identify_unknown: "The reader does not know this finger. Try another finger, or enroll it.",
+    identify_isolating: "UserID {u} has several fingerprints: separating them on the device…",
+    identify_again: "Place the same finger on the reader again.",
+    identify_other: "That was not the same finger: place the finger from the first step again.",
+    identify_restoring: "Putting the fingerprints back…",
+    identify_found: "Fingerprint found", identify_found_of: "{name} · UserID {u} · slot {s}",
+    identify_placed: "Placed on: {finger}", identify_other_person: "This fingerprint belongs to {name}: it was not placed on this hand.",
+    identify_next: "Identify another finger", identify_timeout: "No finger within 60 s.", identify_cancelled: "Identification cancelled.",
+    identify_error: "Identification failed: {e}",
   },
   fr: {
     title: "Contrôle d'accès", device: "Appareil", connected: "Connecté", disconnected: "Déconnecté",
@@ -186,6 +199,19 @@ const I18N = {
     on_hand: "Doigt sur la main", not_placed: "— non placé —", nfc_tag: "Tag NFC « {n} »", reload: "Relire le lecteur",
     relay_confirm: "Ces UserID vont perdre le droit d'ouvrir la porte (le lecteur les refusera ; Home Assistant recevra quand même leurs actions) : {ids}. Continuer ?",
     confirm: "Confirmer",
+    identify: "Identifier un doigt", identify_title: "Identifier un doigt",
+    identify_existing: "Déjà enregistré ? L'identifier sur le lecteur",
+    identify_note: "Pendant l'identification, le lecteur sert seulement à reconnaître le doigt : ses accès ne déclenchent aucune automation et ne sont pas journalisés (arrêt après 60 s sans doigt). Le lecteur peut toutefois actionner sa propre sortie de gâche.",
+    identify_wait: "Posez le doigt sur le lecteur…",
+    identify_unknown: "Le lecteur ne connaît pas ce doigt. Essayez un autre doigt, ou enregistrez-le.",
+    identify_isolating: "Le UserID {u} a plusieurs empreintes : séparation sur le lecteur…",
+    identify_again: "Reposez le même doigt sur le lecteur.",
+    identify_other: "Ce n'est pas le même doigt : reposez le doigt de la première étape.",
+    identify_restoring: "Remise en place des empreintes…",
+    identify_found: "Empreinte trouvée", identify_found_of: "{name} · UserID {u} · emplacement {s}",
+    identify_placed: "Placée sur : {finger}", identify_other_person: "Cette empreinte appartient à {name} : elle n'a pas été placée sur cette main.",
+    identify_next: "Identifier un autre doigt", identify_timeout: "Aucun doigt en 60 s.", identify_cancelled: "Identification annulée.",
+    identify_error: "Échec de l'identification : {e}",
   },
 };
 
@@ -409,6 +435,9 @@ class ZkAccessPanel extends HTMLElement {
       if (msg.enroll && this._s.modal?.kind === "enroll") {
         this._s.modal.step = msg.enroll.state === "done" ? "done" : "timeout";
       }
+      if (msg.identify && this._s.modal?.kind === "identify") {
+        Object.assign(this._s.modal, { id: msg.identify });
+      }
       if (msg.pair && this._s.modal?.kind === "pair") {
         this._s.modal.step = msg.pair.state; this._s.modal.name = msg.pair.name;
       }
@@ -504,7 +533,32 @@ class ZkAccessPanel extends HTMLElement {
       case "user-delete": s.modal = { kind: "confirm", text: `${this.t("delete")} UserID ${d.u} ?`,
         then: async () => { await this.call("user/delete", { user_id: Number(d.u) }); await this.refresh(); } }; break;
       case "confirm-ok": { const m = s.modal; s.modal = null; this.render(); await m.then(); break; }
-      case "close-modal": s.modal = null; break;
+      case "close-modal":
+        if (s.modal?.kind === "identify") {
+          if (this.identifyActive(s.modal)) await this.ws("identify/cancel").catch(() => {});
+          s.modal = null; await this.refresh(); return;
+        }
+        s.modal = null; break;
+      case "identify-start": {
+        const physical = d.i === undefined || d.i === "" ? null : Number(d.i);
+        const person = s.person ?? null;
+        s.modal = { kind: "identify", person, physical, id: { state: "starting" } };
+        this.render();
+        try { s.modal.id = await this.ws("identify/start", { person, physical }); }
+        catch (e) { s.modal.id = { state: "error", error: e.message || String(e) }; }
+        break;
+      }
+      case "identify-place": {
+        const r = s.modal.id; const physical = el.value === "" ? null : Number(el.value);
+        await this.call("finger/update", { user_id: r.user_id, finger_id: r.finger_id, physical });
+        r.placed = physical != null; s.modal.physical = physical; await this.refresh(); return;
+      }
+      case "identify-delete": {
+        const r = s.modal.id;
+        s.modal = { kind: "confirm", text: this.t("delete_fingerprint") + ` (UserID ${r.user_id} · ${r.finger_id}) ?`, then: async () => {
+          await this.call("finger/delete", { user_id: r.user_id, finger_id: r.finger_id }); s.finger = null; await this.refresh(); } };
+        break;
+      }
       case "reload": {
         this.busy(1);
         try { s.state = await this.ws("state", { refresh: true }); s.history = await this.ws("history", { limit: 300 }); }
@@ -572,6 +626,8 @@ class ZkAccessPanel extends HTMLElement {
     return out;
   }
   fingerAt(i) { return this.fingersOf(this.findPerson(this._s.person)).find((f) => f.physical === i); }
+
+  identifyActive(m) { return ["starting", "waiting", "unknown", "isolating", "again", "other", "restoring"].includes(m?.id?.state); }
 
   openEnroll(physical) {
     this._s.modal = { kind: "enroll", person: this._s.person, physical, step: "choose" };
@@ -765,6 +821,47 @@ class ZkAccessPanel extends HTMLElement {
       ${unassigned}</main>`;
   }
 
+  renderIdentify(m) {
+    const r = m.id || {}, p = this.findPerson(m.person);
+    const head = `<div class="row"><h2>${this.t("identify_title")}</h2><span class="muted" style="margin-left:auto">${esc(p?.name || "")}${m.physical != null ? ` · <b>${esc(this.fingerName(m.physical))}</b>` : ""}</span></div>`;
+    const spin = (txt) => `<div class="row"><span class="spin"></span>${txt}</div>`;
+    const warn = (txt) => `<div class="row" style="color:#b42318">${txt}</div>`;
+    let body = "", actions = `<button class="btn" data-act="close-modal">${this.t("cancel")}</button>`;
+    switch (r.state) {
+      case "starting": case "waiting": body = spin(this.t("identify_wait")); break;
+      case "unknown": body = `${warn(this.t("identify_unknown"))}${spin(this.t("identify_wait"))}`; break;
+      case "isolating": body = spin(this.t("identify_isolating", { u: r.user_id })); break;
+      case "again": body = spin(this.t("identify_again")); break;
+      case "other": body = `${warn(this.t("identify_other"))}${spin(this.t("identify_again"))}`; break;
+      case "restoring": body = spin(this.t("identify_restoring")); break;
+      case "found": {
+        const mine = r.found_person != null && r.found_person === m.person;
+        const name = r.found_name || (r.found_person != null ? this.t("person_no", { n: r.found_person }) : "?");
+        const place = mine ? `<label class="field">${this.t("on_hand")}<select data-act="identify-place">
+          <option value="">${this.t("not_placed")}</option>${FINGER_KEYS.map((_, i) =>
+            `<option value="${i}" ${r.placed && i === m.physical ? "selected" : ""}>${esc(this.fingerName(i))}</option>`).join("")}</select></label>` : "";
+        body = `<div class="detail" style="margin:0;flex-direction:column;align-items:stretch">
+          <b style="font-weight:500;color:#067647">✓ ${this.t("identify_found")}</b>
+          <div class="mono">${esc(this.t("identify_found_of", { name, u: r.user_id, s: r.finger_id }))}</div>
+          ${r.placed ? `<div>${this.t("identify_placed", { finger: esc(this.fingerName(m.physical)) })}</div>` : ""}
+          ${m.physical != null && !mine ? `<div class="muted">${this.t("identify_other_person", { name: esc(name) })}</div>` : ""}
+          ${place}</div>`;
+        actions = `<button class="btn danger" data-act="identify-delete" style="margin-right:auto">${this.t("delete_fingerprint")}</button>
+          <button class="btn" data-act="identify-start" data-i="">${this.t("identify_next")}</button>
+          <button class="btn primary" data-act="close-modal">${this.t("done")}</button>`;
+        break;
+      }
+      case "timeout": body = warn(this.t("identify_timeout")); break;
+      case "cancelled": body = warn(this.t("identify_cancelled")); break;
+      default: body = warn(this.t("identify_error", { e: esc(r.error || r.state || "?") }));
+    }
+    if (["timeout", "cancelled", "error"].includes(r.state) || (!r.state)) {
+      actions = `<button class="btn" data-act="identify-start" data-i="${m.physical ?? ""}">${this.t("identify_next")}</button>
+        <button class="btn primary" data-act="close-modal">${this.t("done")}</button>`;
+    }
+    return `${head}${body}<div class="muted">${this.t("identify_note")}</div><div class="actions">${actions}</div>`;
+  }
+
   renderHand(from, to, label) {
     const cols = [];
     for (let i = from; i <= to; i++) cols.push(i);
@@ -830,7 +927,8 @@ class ZkAccessPanel extends HTMLElement {
         <div><h2 style="margin:0;font-size:22px;font-weight:500">${esc(p.name || this.t("person_no", { n: p.num }))}</h2><div class="muted">${this.t("person_no", { n: p.num })}</div></div>
         <label class="chk" style="margin-left:auto;font-weight:500"><input type="checkbox" data-act="toggle-person" data-p="${p.num}" ${p.enabled ? "checked" : ""}>${this.t("access_enabled")}</label></div>
       <div class="cols"><div class="grow">
-        <section class="card"><h2>${this.t("fingerprints_title")}</h2><p class="sub">${this.t("fingers_help")}</p>
+        <section class="card"><div class="row"><h2 style="margin:0">${this.t("fingerprints_title")}</h2>
+          <button class="btn sm" style="margin-left:auto" data-act="identify-start">${this.t("identify")}</button></div><p class="sub">${this.t("fingers_help")}</p>
           <div class="hands">${this.renderHand(0, 4, this.t("left_hand"))}${this.renderHand(5, 9, this.t("right_hand"))}</div>${detail}${unplacedHtml}</section>
         ${table}</div>
       <div class="side">
@@ -999,7 +1097,8 @@ class ZkAccessPanel extends HTMLElement {
         const opts = this.plain() ? `<input type="hidden" name="cat" value="0">` : Object.keys(cats).map((d) =>
           `<label class="chk" style="border:1px solid var(--zk-line);border-radius:10px;padding:6px 12px"><input type="radio" name="cat" value="${d}" ${d === "0" ? "checked" : ""}>${esc(cats[d].name)}</label>`).join("");
         inner = `${head}${this.plain() ? opts : `<b style="font-weight:500">${this.t("category_of_finger")}</b><div class="row">${opts}</div>`}
-          <div class="actions"><button class="btn" data-act="close-modal">${this.t("cancel")}</button><button class="btn primary" data-act="enroll-start">${this.t("start")}</button></div>`;
+          <div class="actions"><button class="btn" data-act="identify-start" data-i="${m.physical}" style="margin-right:auto">${this.t("identify_existing")}</button>
+          <button class="btn" data-act="close-modal">${this.t("cancel")}</button><button class="btn primary" data-act="enroll-start">${this.t("start")}</button></div>`;
       } else {
         const digits = String(m.user_id).split("").map((c) => `<span class="key big">${c}</span>`).join("");
         const cat = cats[String(m.digit)];
@@ -1013,6 +1112,8 @@ class ZkAccessPanel extends HTMLElement {
           <div class="muted">${this.t("keypad_note")}</div>
           ${status}<div class="actions"><button class="btn ${m.step === "done" ? "primary" : ""}" data-act="enroll-cancel">${m.step === "done" ? this.t("done") : this.t("cancel")}</button></div>`;
       }
+    } else if (m.kind === "identify") {
+      inner = this.renderIdentify(m);
     } else if (m.kind === "card") {
       const persons = this.persons();
       inner = `<h2>${this.t("learn_card")}</h2>

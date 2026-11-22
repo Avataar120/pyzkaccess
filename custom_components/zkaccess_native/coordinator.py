@@ -25,7 +25,7 @@ from pyzkaccess_native.events import DENIED_EVENTS, GRANTED_EVENTS
 
 from .const import (CONF_OPEN_SECONDS, CONF_POLL_INTERVAL, CONF_SYNC_CLOCK, DEFAULT_OPEN_SECONDS,
                     DEFAULT_POLL_INTERVAL, DEFAULT_SYNC_CLOCK, DOMAIN, ENROLL_TIMEOUT_SECONDS,
-                    EVENT_ACCESS, PANEL_URL, PHONE_PAIR_TIMEOUT_SECONDS, TOGGLE_INACTIVE_STATES,
+                    EVENT_ACCESS, IDENTIFY_TIMEOUT_SECONDS, PANEL_URL, PHONE_PAIR_TIMEOUT_SECONDS, TOGGLE_INACTIVE_STATES,
                     RESULT_ACTION, RESULT_DENIED, RESULT_GRANTED, RESULT_OTHER,
                     RETRY_MAX_SECONDS, RETRY_MIN_SECONDS, SNAPSHOT_REFRESH_SECONDS)
 from .manager import AccessManager
@@ -91,6 +91,9 @@ class ZKCoordinator(DataUpdateCoordinator[ZKData]):
         self._snapshot_at: Optional[float] = None  # None = refresh on the next poll
         self._repeat = RepeatDetector(store.data.get("second_window", 3.0))
         self.enrollment: Optional[dict[str, Any]] = None
+        #: finger identification in progress (reader events are not published meanwhile)
+        self.identify: Optional[dict[str, Any]] = None
+        self._identify_restoring = False
         self._unsub_nightly: Optional[Callable[[], None]] = None
         self._unsub_backup: Optional[Callable[[], None]] = None
         self._unsub_tags: Optional[Callable[[], None]] = None
@@ -167,8 +170,19 @@ class ZKCoordinator(DataUpdateCoordinator[ZKData]):
             self._apply_raw(raw)
         if self.enrollment:
             self._update_enrollment(enrolled)
-        events = [self._enrich(r) for r in records if isinstance(r, AccessEvent)]
+        access = [r for r in records if isinstance(r, AccessEvent)]
+        if self.identify is not None:
+            # Identification: the reader is used as a sensor only. Its events reach
+            # neither the automations, nor the event entity, nor the history.
+            for record in access:
+                self._identify_event(record)
+            self._identify_check_timeout()
+            events: list[dict[str, Any]] = []
+        else:
+            events = [self._enrich(r) for r in access]
         self._publish(events)
+        if self.store.data.get("identify_pending") and self.identify is None and not self._identify_restoring:
+            self.hass.async_create_task(self._async_identify_restore())
         if self.phone_pairing and time.monotonic() > self.phone_pairing["until"]:
             self.phone_pairing = None
             async_dispatcher_send(self.hass, signal_changed(self.config_entry.entry_id), {"pair": {"state": "timeout"}})
@@ -436,6 +450,9 @@ class ZKCoordinator(DataUpdateCoordinator[ZKData]):
         return []
 
     async def async_backup(self, reason: str) -> Optional[str]:
+        if self.store.data.get("identify_pending"):
+            _LOGGER.debug("Backup skipped: fingerprints are isolated for an identification")
+            return None
         try:
             return await self.async_run(self.manager.backup_create, reason, refresh=False)
         except HomeAssistantError as ex:
@@ -446,6 +463,150 @@ class ZKCoordinator(DataUpdateCoordinator[ZKData]):
         self.enrollment = {"user_id": user_id, "baseline": baseline, "physical": physical,
                            "state": "waiting", "started": time.monotonic()}
         return self.enrollment
+
+    # ----------------------------------------------------------- identification
+    def start_identify(self, person: Optional[int], physical: Optional[int]) -> dict[str, Any]:
+        if self.identify is not None:
+            raise HomeAssistantError("an identification is already running")
+        if self.store.data.get("identify_pending"):
+            raise HomeAssistantError("the previous identification is still being undone, try again")
+        if self.enrollment is not None:
+            raise HomeAssistantError("an enrollment is running")
+        self.identify = {"state": "waiting", "step": 1, "person": person, "physical": physical,
+                         "started": time.monotonic()}
+        self._identify_notify()
+        return self._identify_public()
+
+    def _identify_public(self, idf: Optional[dict[str, Any]] = None) -> dict[str, Any]:
+        idf = idf if idf is not None else (self.identify or {})
+        return {k: v for k, v in idf.items() if k not in ("started", "mapping")}
+
+    def _identify_notify(self, idf: Optional[dict[str, Any]] = None) -> None:
+        async_dispatcher_send(self.hass, signal_changed(self.config_entry.entry_id),
+                              {"identify": self._identify_public(idf)})
+
+    def _fingers_of(self, user_id: int) -> list[int]:
+        for p in (self.snapshot or {}).get("persons", []):
+            for c in p["categories"]:
+                if c["user_id"] == user_id:
+                    return [f["finger_id"] for f in c["fingers"]]
+        return []
+
+    @callback
+    def _identify_event(self, ev: AccessEvent) -> None:
+        idf = self.identify
+        if idf is None or idf["state"] not in ("waiting", "again", "unknown", "other"):
+            return  # busy (isolating / restoring)
+        if access_method(ev) in ("card", "code", "remote"):
+            return
+        uid = ev.user_id or 0
+        if idf["step"] == 2:
+            mapping = idf.get("mapping") or {}
+            if uid in mapping:
+                idf.update(state="restoring")
+                self._identify_notify()
+                self.hass.async_create_task(self._async_identify_finish(idf["user_id"], mapping[uid]))
+            else:
+                idf.update(state="other")  # another finger than the one of step 1
+                self._identify_notify()
+            return
+        fingers = self._fingers_of(uid) if uid else []
+        if not fingers:
+            idf.update(state="unknown")
+            self._identify_notify()
+            return
+        if len(fingers) == 1:
+            self._identify_found(uid, fingers[0])
+            return
+        idf.update(state="isolating", step=2, user_id=uid)
+        self._identify_notify()
+        self.hass.async_create_task(self._async_identify_isolate(idf, uid))
+
+    async def _async_identify_isolate(self, idf: dict[str, Any], user_id: int) -> None:
+        try:
+            mapping = await self.async_run(self.manager.identify_copy, user_id, refresh=False)
+            # Recorded on disk before anything is removed: a restart undoes the isolation.
+            self.store.data["identify_pending"] = {"user_id": user_id,
+                                                   "temps": {str(k): v for k, v in mapping.items()}}
+            await self.store.async_save_now()
+            await self.async_run(self.manager.identify_hide, user_id, refresh=False)
+        except HomeAssistantError as ex:
+            _LOGGER.warning("Identification: isolating UserID %s failed: %s", user_id, ex)
+            if self.identify is idf:
+                self.identify = None
+            self._identify_notify({**idf, "state": "error", "error": str(ex)})
+            await self._async_identify_restore()
+            return
+        if self.identify is not idf:  # cancelled meanwhile
+            await self._async_identify_restore()
+            return
+        idf.update(state="again", mapping=mapping, started=time.monotonic())
+        self._identify_notify()
+
+    async def _async_identify_finish(self, user_id: int, finger_id: int) -> None:
+        if not await self._async_identify_restore():
+            idf = self.identify or {}
+            self.identify = None
+            self._identify_notify({**idf, "state": "error",
+                                   "error": "the fingerprints could not be put back yet; retrying"})
+            return
+        self._identify_found(user_id, finger_id)
+
+    async def _async_identify_restore(self) -> bool:
+        """Undo a pending isolation (also after a restart). True when nothing is left."""
+        pending = self.store.data.get("identify_pending")
+        if not pending:
+            return True
+        if self._identify_restoring:
+            return False
+        self._identify_restoring = True
+        try:
+            mapping = {int(k): v for k, v in pending["temps"].items()}
+            await self.async_run(self.manager.identify_restore, pending["user_id"], mapping, refresh=False)
+        except HomeAssistantError as ex:
+            _LOGGER.error("Identification: restoring the fingerprints of UserID %s failed (will retry): %s",
+                          pending["user_id"], ex)
+            return False
+        finally:
+            self._identify_restoring = False
+        self.store.data.pop("identify_pending", None)
+        await self.store.async_save_now()
+        self._snapshot_at = None
+        return True
+
+    @callback
+    def _identify_found(self, user_id: int, finger_id: int) -> None:
+        idf = self.identify or {}
+        who = self._user_index.get(user_id) or {}
+        placed = False
+        if idf.get("physical") is not None and who and who.get("person") == idf.get("person"):
+            self.store.set_physical_finger(user_id, finger_id, idf["physical"],
+                                           self.person_user_ids(who["person"]) or [user_id])
+            self.store.save()
+            placed = True
+        result = {**idf, "state": "found", "user_id": user_id, "finger_id": finger_id,
+                  "found_person": who.get("person"), "found_name": who.get("person_name"),
+                  "placed": placed}
+        self.identify = None
+        self.async_rebuild()
+        self._identify_notify(result)
+
+    @callback
+    def _identify_check_timeout(self) -> None:
+        idf = self.identify
+        if idf is None or idf["state"] in ("isolating", "restoring"):
+            return
+        if time.monotonic() - idf["started"] > IDENTIFY_TIMEOUT_SECONDS:
+            self.identify = None
+            self._identify_notify({**idf, "state": "timeout"})
+            if self.store.data.get("identify_pending"):
+                self.hass.async_create_task(self._async_identify_restore())
+
+    async def async_identify_cancel(self) -> None:
+        idf, self.identify = self.identify, None
+        if idf is not None:
+            self._identify_notify({**idf, "state": "cancelled"})
+        await self._async_identify_restore()
 
     # ---------------------------------------------------------------- lifecycle
     async def async_setup_schedules(self) -> None:
@@ -470,5 +631,11 @@ class ZKCoordinator(DataUpdateCoordinator[ZKData]):
             if unsub:
                 unsub()
         self._unsub_nightly = self._unsub_backup = self._unsub_tags = None
+        self.identify = None
+        if self.store.data.get("identify_pending"):
+            try:
+                await self._async_identify_restore()
+            except Exception:  # noqa: BLE001 - retried at the next start
+                _LOGGER.exception("Identification: restore at shutdown failed")
         await super().async_shutdown()
         await self.hass.async_add_executor_job(self.client.disconnect)

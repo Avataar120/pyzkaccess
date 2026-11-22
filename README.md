@@ -184,6 +184,8 @@ other.save_user(User(user_id=105, name="Alice"))
 other.save_template(Template(user_id=105, finger_id=0, template=mine[0].template))
 
 dev.delete_templates(105)                # or delete_templates(105, finger_id=3)
+dev.move_template(105, 3, 100)           # one finger to another user (first free slot)
+dev.move_templates(105, 100)             # all fingers of 105 to 100, in one go
 ```
 
 `save_template()` refuses to write when another user has the same internal slot (see
@@ -383,6 +385,18 @@ menu is `3` (backup fingerprint, adds a finger to an existing user); menu `1` (a
 refuses an existing UserID. A UserID can hold several fingers: enroll them one after the
 other with menu `3`.
 
+**Identifying a finger.** The device reports which UserID recognized a finger, not which
+of its fingerprints. *Identify a finger* (on a person, or from a free finger: *Already
+enrolled? Identify it on the reader*) uses the reader as a sensor: place a finger and the
+page shows the person, the UserID and the fingerprint slot, places it on the hand when a
+finger was chosen, and offers to delete it. While identifying, the reader's events run no
+automation and are not logged (it stops after 60 s without a finger). When the UserID has
+several fingerprints, they are separated for a moment: each is copied to a temporary
+UserID without rights (9990-9999), the UserID's own copies are removed, and the page asks
+for the same finger again; then everything is put back and checked. The isolation is
+recorded first, so a restart or an error puts the fingerprints back as well. No backup is
+taken meanwhile. The device may still drive its own lock output for a recognized finger.
+
 **Learning a card.** Click *Learn a card* and present the card: the device reports it as
 unknown, the page shows its number and writes it to the chosen person and category.
 
@@ -490,6 +504,9 @@ against each of them, but you should know them:
    to the device can leave users without access.
 7. Events are delivered to every open session: if two programs act on events, both will
    act. Do not manage a device from ZKAccess and this library at the same time.
+8. **Some firmware ignore a delete with several conditions** (the MA500 answers OK to
+   `Pin` + `FingerID` and removes nothing). → `delete_templates(user, finger_id)` and
+   `move_template()` delete by `Pin` only and write the other fingers back.
 
 ## Testing without hardware
 

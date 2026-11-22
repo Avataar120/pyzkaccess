@@ -21,6 +21,12 @@
 - Home Assistant integration: merging a UserID into a category moves its fingers in one
   go and keeps their physical finger.
 
+- Home Assistant integration: **identify a finger** on the reader from the panel (on a
+  person, or from a free finger). The page shows the person, UserID and fingerprint slot,
+  places it on the hand and offers to delete it; meanwhile the reader's events run no
+  automation. A UserID with several fingerprints is separated for a moment on temporary
+  UserIDs (9990-9999) without rights, then restored and checked (also after a restart).
+
 ## 0.3.0 - 2026-11-22
 
 ### Home Assistant integration

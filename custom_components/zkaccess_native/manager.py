@@ -22,7 +22,7 @@ from pyzkaccess_native import (CategoryScheme, DoorSettings, SafetyError, Templa
                                ZKAccess)
 from pyzkaccess_native import backup as zk_backup
 
-from .const import CATEGORY_TYPES, NUMBERING_PLAIN
+from .const import CATEGORY_TYPES, IDENTIFY_PINS, NUMBERING_PLAIN
 from .store import AccessStore
 
 _LOGGER = logging.getLogger(__name__)
@@ -77,13 +77,66 @@ class AccessManager:
 
     # ------------------------------------------------------------------ reading
     def read_raw(self) -> dict[str, list[dict[str, Any]]]:
-        """Users, templates (without data) and authorizations, as device rows."""
+        """Users, templates (without data) and authorizations, as device rows
+        (the temporary UserIDs of an identification are left out)."""
         dev = self.client
+
+        def keep(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+            return [r for r in rows if r.get("Pin") not in IDENTIFY_PINS]
         return {
-            "users": dev.read_table("user"),
-            "templates": dev.read_table("templatev10", fields=TEMPLATE_LIGHT),
-            "auths": dev.read_table("userauthorize"),
+            "users": keep(dev.read_table("user")),
+            "templates": keep(dev.read_table("templatev10", fields=TEMPLATE_LIGHT)),
+            "auths": keep(dev.read_table("userauthorize")),
         }
+
+    # ----------------------------------------------------------- identification
+    def identify_copy(self, user_id: int) -> dict[int, int]:
+        """Step 1 of the isolation: copy each template of ``user_id`` to its own
+        temporary UserID, without access rights (the device then reports that UserID
+        for this finger). Returns ``{temporary UserID: finger slot}``. Nothing is
+        removed here; on error the temporary UserIDs are deleted again."""
+        templates = self.client.get_templates(user_id)
+        if len(templates) < 2:
+            raise SafetyError(f"UserID {user_id} has fewer than 2 fingerprints")
+        existing = {u.user_id for u in self.client.get_users()}
+        free = [pin for pin in IDENTIFY_PINS if pin not in existing]
+        if len(free) < len(templates):
+            raise SafetyError("not enough free temporary UserIDs (9990-9999)")
+        mapping: dict[int, int] = {}
+        try:
+            for t, pin in zip(templates, free):
+                self.client.save_user(User(user_id=pin, name="identify"), merge=False)
+                mapping[pin] = t.finger_id
+                self.client.save_template(Template(user_id=pin, finger_id=0, template=t.template, valid=t.valid))
+        except Exception:
+            for pin in mapping:
+                self.client.delete_user(pin)
+            raise
+        return mapping
+
+    def identify_hide(self, user_id: int) -> None:
+        """Step 2 of the isolation: remove the templates of ``user_id`` (they are
+        kept on the temporary UserIDs), so the device reports the temporary UserID."""
+        self.client.delete_templates(user_id)
+
+    def identify_restore(self, user_id: int, mapping: dict[int, int]) -> None:
+        """Put the templates back on ``user_id``, check them, then delete the
+        temporary UserIDs. Safe to run again after a partial restore."""
+        present = {t.finger_id for t in self.client.get_templates(user_id, with_data=False)}
+        for pin, finger in mapping.items():
+            if finger in present:
+                continue
+            source = self.client.get_templates(pin)
+            if not source:
+                raise SafetyError(f"temporary UserID {pin} has no template (finger {finger} of {user_id})")
+            self.client.save_template(Template(user_id=user_id, finger_id=finger,
+                                               template=source[0].template, valid=source[0].valid))
+        present = {t.finger_id for t in self.client.get_templates(user_id, with_data=False)}
+        missing = set(mapping.values()) - present
+        if missing:
+            raise SafetyError(f"fingers {sorted(missing)} of UserID {user_id} could not be restored")
+        for pin in mapping:
+            self.client.delete_user(pin)
 
     @staticmethod
     def fingerprint(raw: dict[str, Any]) -> str:

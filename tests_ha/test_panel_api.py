@@ -205,3 +205,99 @@ async def test_toggle_needs_valid_targets(hass: HomeAssistant, emulator, setup, 
                                        "5": {"type": "toggle", "name": "T", "entity_id": "x.y", "on": 6, "off": 0}}})
     msg = await ws.receive_json()
     assert not msg["success"]
+
+
+async def test_identify_finger(hass: HomeAssistant, emulator, setup):
+    entry, call = setup
+    coord = entry.runtime_data
+    await call("categories/save", categories={"0": {"type": "open", "name": "Open", "relay": True},
+                                              "8": {"type": "custom", "name": "Garage", "relay": True}})
+    await call("person/save", person=12, name="Bob")
+    with ZKAccess("127.0.0.1", emulator.port) as dev:
+        from pyzkaccess_native import User
+        for uid in (120, 128):
+            dev.save_user(User(user_id=uid, name="Bob"))
+        dev.save_template(Template(user_id=120, finger_id=0, template=b"A" * 32))
+        dev.save_template(Template(user_id=120, finger_id=1, template=b"B" * 32))
+        dev.save_template(Template(user_id=128, finger_id=0, template=b"G" * 32))
+    await call("state", refresh=True)
+    events = async_capture_events(hass, EVENT_ACCESS)
+    notices = []
+    from homeassistant.helpers.dispatcher import async_dispatcher_connect
+    from custom_components.zkaccess_native.coordinator import signal_changed
+    async_dispatcher_connect(hass, signal_changed(entry.entry_id),
+                             lambda msg=None: msg and "identify" in msg and notices.append(msg["identify"]))
+
+    def templates():
+        with ZKAccess("127.0.0.1", emulator.port) as dev:
+            return sorted((t.user_id, t.finger_id, t.template[:1]) for t in dev.get_templates())
+
+    def fingers(state, uid):
+        cat = next(c for c in state["snapshot"]["persons"][0]["categories"] if c["user_id"] == uid)
+        return {f["finger_id"]: f["physical"] for f in cat["fingers"]}
+
+    # A UserID with one fingerprint: identified at once, no write on the device.
+    assert (await call("identify/start", person=12, physical=3))["state"] == "waiting"
+    emulator.state.push_event(14, user_id=128)
+    await poll(hass, entry)
+    assert notices[-1]["state"] == "found" and notices[-1]["user_id"] == 128 and notices[-1]["placed"]
+    assert fingers(await call("state"), 128) == {0: 3}
+
+    # Several fingerprints: each is isolated on a temporary UserID, then put back.
+    before = templates()
+    await call("identify/start", person=12, physical=6)
+    emulator.state.push_event(14, user_id=120)
+    await poll(hass, entry)
+    await hass.async_block_till_done()
+    assert notices[-1]["state"] == "again"
+    isolated = templates()
+    assert [t for t in isolated if t[0] == 120] == []
+    temp = next(t[0] for t in isolated if t[0] >= 9990 and t[2] == b"B")
+    assert coord.store.data["identify_pending"]["user_id"] == 120
+    state = await call("state", refresh=True)       # temporary UserIDs stay hidden
+    assert all(c["user_id"] < 9990 for p in state["snapshot"]["persons"] for c in p["categories"])
+    assert state["snapshot"]["unassigned"] == []
+    emulator.state.push_event(23, user_id=temp)     # recognized, no rights
+    await poll(hass, entry)
+    await hass.async_block_till_done()
+    assert notices[-1]["state"] == "found" and (notices[-1]["user_id"], notices[-1]["finger_id"]) == (120, 1)
+    assert templates() == before
+    assert "identify_pending" not in coord.store.data
+    assert fingers(await call("state", refresh=True), 120) == {0: None, 1: 6}
+
+    # Cancelled while isolated: everything is put back.
+    await call("identify/start", person=12)
+    emulator.state.push_event(14, user_id=120)
+    await poll(hass, entry)
+    await hass.async_block_till_done()
+    assert templates() != before
+    await call("identify/cancel")
+    assert templates() == before and "identify_pending" not in coord.store.data
+
+    # Identification never reaches the automations; normal events do again afterwards.
+    assert events == []
+    emulator.state.push_event(14, user_id=128)
+    await poll(hass, entry)
+    assert len(events) == 1 and events[0].data["user_id"] == 128
+
+
+async def test_identify_restored_after_restart(hass: HomeAssistant, emulator, setup):
+    entry, call = setup
+    await call("person/save", person=12, name="Bob")
+    with ZKAccess("127.0.0.1", emulator.port) as dev:
+        from pyzkaccess_native import User
+        dev.save_user(User(user_id=120, name="Bob"))
+        dev.save_template(Template(user_id=120, finger_id=0, template=b"A" * 32))
+        dev.save_template(Template(user_id=120, finger_id=2, template=b"C" * 32))
+    await call("state", refresh=True)
+    await call("identify/start", person=12)
+    emulator.state.push_event(14, user_id=120)
+    await poll(hass, entry)
+    await hass.async_block_till_done()
+    assert entry.runtime_data.store.data.get("identify_pending")
+    # Home Assistant stops in the middle: unloading puts the fingerprints back.
+    assert await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+    with ZKAccess("127.0.0.1", emulator.port) as dev:
+        assert sorted((t.user_id, t.finger_id) for t in dev.get_templates()) == [(120, 0), (120, 2)]
+        assert [u.user_id for u in dev.get_users() if u.user_id >= 9990] == []

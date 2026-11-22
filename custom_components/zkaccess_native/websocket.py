@@ -214,6 +214,8 @@ async def ws_enroll_start(hass, connection, msg) -> None:
     coord = _coordinator(hass, msg["entry_id"])
 
     async def run():
+        if coord.identify is not None:
+            raise HomeAssistantError("a finger identification is running")
         user_id, baseline = await coord.async_run(coord.manager.enroll_start, msg["person"], msg["digit"])
         enr = coord.start_enrollment(user_id, baseline, msg.get("physical"))
         return {"user_id": user_id, "state": enr["state"]}
@@ -226,6 +228,30 @@ async def ws_enroll_start(hass, connection, msg) -> None:
 def ws_enroll_cancel(hass, connection, msg) -> None:
     _coordinator(hass, msg["entry_id"]).enrollment = None
     _reply(connection, msg)
+
+
+# -------------------------------------------------------------- identification
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/identify/start", ENTRY: str,
+                                  vol.Optional("person"): vol.Any(None, int),
+                                  vol.Optional("physical"): vol.Any(None, vol.All(int, vol.Range(0, 9)))})
+@websocket_api.require_admin
+@websocket_api.async_response
+async def ws_identify_start(hass, connection, msg) -> None:
+    """Identify the next finger placed on the reader. Its events are not published
+    (no automation runs); with ``physical``, the finger found is placed on the hand."""
+    coord = _coordinator(hass, msg["entry_id"])
+
+    async def run():
+        return coord.start_identify(msg.get("person"), msg.get("physical"))
+    await _guard(connection, msg, run())
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/identify/cancel", ENTRY: str})
+@websocket_api.require_admin
+@websocket_api.async_response
+async def ws_identify_cancel(hass, connection, msg) -> None:
+    coord = _coordinator(hass, msg["entry_id"])
+    await _guard(connection, msg, coord.async_identify_cancel())
 
 
 # ---------------------------------------------------------------------- phones
@@ -446,7 +472,7 @@ def ws_settings_save(hass, connection, msg) -> None:
 
 COMMANDS = [ws_devices, ws_state, ws_history, ws_subscribe, ws_person_save, ws_person_delete,
             ws_person_enable, ws_credential_set, ws_finger_delete, ws_finger_update, ws_enroll_start,
-            ws_enroll_cancel, ws_phone_pair_start, ws_phone_pair_cancel, ws_phone_update, ws_phone_remove,
+            ws_enroll_cancel, ws_identify_start, ws_identify_cancel, ws_phone_pair_start, ws_phone_pair_cancel, ws_phone_update, ws_phone_remove,
             ws_tags_save, ws_unassigned_assign, ws_user_delete, ws_categories_save, ws_door_get,
             ws_door_set, ws_door_control, ws_clock_sync, ws_backup_list, ws_backup_create,
             ws_backup_download, ws_backup_restore, ws_backup_import, ws_settings_save]

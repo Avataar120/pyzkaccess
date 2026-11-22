@@ -58,6 +58,10 @@ class AccessStore:
     def save(self, delay: float = 1.0) -> None:
         self._store.async_delay_save(lambda: self.data, delay)
 
+    async def async_save_now(self) -> None:
+        """Write to disk at once (for state that must survive a crash)."""
+        await self._store.async_save(self.data)
+
     async def async_remove(self) -> None:
         await self._store.async_remove()
 
