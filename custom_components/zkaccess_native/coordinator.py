@@ -265,7 +265,10 @@ class ZKCoordinator(DataUpdateCoordinator[ZKData]):
                who: Optional[dict[str, Any]], digit: Optional[int], cat: Optional[dict[str, Any]],
                gesture: str, toggled: bool, method: str, card: Optional[int], door: int,
                verify_mode: Optional[int], when: Optional[str], phone: Optional[str] = None) -> dict[str, Any]:
-        device = dr.async_get(self.hass).async_get_device({(DOMAIN, self.config_entry.unique_id)})
+        # One device per config entry: avoids DeviceRegistry.async_get_device, deprecated in
+        # HA 2026.x (identifiers no longer unique across config entries), removed in 2027.8.
+        devices = dr.async_entries_for_config_entry(dr.async_get(self.hass), self.config_entry.entry_id)
+        device = devices[0] if devices else None
         return {
             "device_id": device.id if device else None,
             "result": result,

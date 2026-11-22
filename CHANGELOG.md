@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- New logo (integration brand icons regenerated from `docs/assets/logo.svg`).
+- Home Assistant integration: the access event no longer uses the deprecated
+  `DeviceRegistry.async_get_device` (removed in Home Assistant 2027.8).
+
 ## 0.3.0 - 2026-11-22
 
 ### Home Assistant integration
