@@ -6,7 +6,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import ZKConfigEntry
-from .const import EVENT_TYPE_DENIED, EVENT_TYPE_GRANTED, EVENT_TYPE_OTHER
+from .const import RESULT_ACTION, RESULT_DENIED, RESULT_GRANTED, RESULT_OTHER
 from .entity import ZKEntity
 
 
@@ -16,10 +16,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ZKConfigEntry,
 
 
 class ZKAccessEvent(ZKEntity, EventEntity):
-    """Fires ``granted`` / ``denied`` / ``other`` with the PIN, card and event code."""
+    """Fires ``granted`` / ``action`` / ``denied`` / ``other`` with person, category and method."""
 
     _attr_translation_key = "access"
-    _attr_event_types = [EVENT_TYPE_GRANTED, EVENT_TYPE_DENIED, EVENT_TYPE_OTHER]
+    _attr_event_types = [RESULT_GRANTED, RESULT_ACTION, RESULT_DENIED, RESULT_OTHER]
 
     def __init__(self, coordinator) -> None:
         super().__init__(coordinator, "access")
@@ -30,8 +30,6 @@ class ZKAccessEvent(ZKEntity, EventEntity):
         if not data or not data.events:
             return
         for ev in data.events:
-            kind = EVENT_TYPE_GRANTED if ev.granted else EVENT_TYPE_DENIED if ev.denied else EVENT_TYPE_OTHER
-            payload = self.coordinator.event_payload(ev)
-            payload.pop("device_id", None)
-            self._trigger_event(kind, payload)
+            attrs = {k: v for k, v in ev.items() if k not in ("device_id", "result")}
+            self._trigger_event(ev["result"], attrs)
             self.async_write_ha_state()

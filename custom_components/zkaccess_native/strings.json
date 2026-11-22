@@ -43,6 +43,7 @@
           "event_type": {
             "state": {
               "granted": "Granted",
+              "action": "Action",
               "denied": "Denied",
               "other": "Other"
             }
@@ -59,14 +60,17 @@
       }
     },
     "sensor": {
-      "users": {
-        "name": "Users"
+      "persons": {
+        "name": "People"
       },
-      "templates": {
-        "name": "Fingerprint templates"
+      "fingerprints": {
+        "name": "Fingerprints"
       },
-      "last_user": {
-        "name": "Last user"
+      "cards": {
+        "name": "Cards"
+      },
+      "last_person": {
+        "name": "Last person"
       }
     },
     "button": {
@@ -81,15 +85,15 @@
   "services": {
     "set_user": {
       "name": "Create or update a user",
-      "description": "Creates the user or updates the given fields; other fields are kept.",
+      "description": "Creates the UserID or updates the given fields; other fields are kept.",
       "fields": {
         "device_id": {
           "name": "Device",
           "description": "The ZKAccess device."
         },
-        "pin": {
-          "name": "PIN",
-          "description": "User PIN (user number)."
+        "user_id": {
+          "name": "UserID",
+          "description": "Number of the user on the device (typed on the keypad)."
         },
         "name": {
           "name": "Name",
@@ -99,37 +103,37 @@
           "name": "Card number",
           "description": "RFID card number."
         },
-        "password": {
-          "name": "Password",
-          "description": "Keypad password (digits)."
+        "code": {
+          "name": "Keypad code",
+          "description": "1 to 6 digits."
         }
       }
     },
     "delete_user": {
       "name": "Delete a user",
-      "description": "Deletes a user with its fingerprint templates and door authorizations.",
+      "description": "Deletes a UserID with its fingerprints and door authorizations.",
       "fields": {
         "device_id": {
           "name": "Device",
           "description": "The ZKAccess device."
         },
-        "pin": {
-          "name": "PIN",
-          "description": "User PIN (user number)."
+        "user_id": {
+          "name": "UserID",
+          "description": "Number of the user on the device (typed on the keypad)."
         }
       }
     },
     "grant": {
       "name": "Grant access",
-      "description": "Allows a user to open doors during a time zone.",
+      "description": "Allows a UserID to open doors during a time zone.",
       "fields": {
         "device_id": {
           "name": "Device",
           "description": "The ZKAccess device."
         },
-        "pin": {
-          "name": "PIN",
-          "description": "User PIN (user number)."
+        "user_id": {
+          "name": "UserID",
+          "description": "Number of the user on the device (typed on the keypad)."
         },
         "timezone": {
           "name": "Time zone",
@@ -143,15 +147,15 @@
     },
     "revoke": {
       "name": "Revoke access",
-      "description": "Removes every door authorization of a user.",
+      "description": "Removes every door authorization of a UserID.",
       "fields": {
         "device_id": {
           "name": "Device",
           "description": "The ZKAccess device."
         },
-        "pin": {
-          "name": "PIN",
-          "description": "User PIN (user number)."
+        "user_id": {
+          "name": "UserID",
+          "description": "Number of the user on the device (typed on the keypad)."
         }
       }
     },
@@ -185,7 +189,7 @@
     },
     "list_users": {
       "name": "List users",
-      "description": "Returns the users stored in the device.",
+      "description": "Returns the UserIDs stored in the device.",
       "fields": {
         "device_id": {
           "name": "Device",
@@ -195,7 +199,7 @@
     },
     "backup": {
       "name": "Backup",
-      "description": "Saves users, fingerprint templates and authorizations to a JSON file in the zkaccess_native folder of the configuration directory.",
+      "description": "Saves people, fingerprints, cards and access rights to a JSON file in the zkaccess_native/backups folder of the configuration directory.",
       "fields": {
         "device_id": {
           "name": "Device",

@@ -1,0 +1,379 @@
+"""WebSocket API used by the management panel (admins only)."""
+from __future__ import annotations
+
+from typing import Any
+
+import voluptuous as vol
+from homeassistant.components import websocket_api
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
+
+from .const import DOMAIN, NUMBERING_CATEGORY, NUMBERING_PLAIN
+from .coordinator import ZKCoordinator, signal_changed, signal_event
+
+ENTRY = vol.Required("entry_id")
+
+
+def _coordinator(hass: HomeAssistant, entry_id: str) -> ZKCoordinator:
+    entry = hass.config_entries.async_get_entry(entry_id)
+    if entry is None or entry.domain != DOMAIN or not hasattr(entry, "runtime_data"):
+        raise HomeAssistantError(f"unknown or unloaded device {entry_id}")
+    return entry.runtime_data
+
+
+def _state(coord: ZKCoordinator) -> dict[str, Any]:
+    info = coord.info
+    status = coord.data.status if coord.data else None
+    doors = (info.lock_count if info else None) or 1
+    return {
+        "device": {
+            "title": coord.config_entry.title,
+            "serial": coord.config_entry.unique_id,
+            "firmware": info.firmware if info else None,
+            "machine_type": info.machine_type if info else None,
+            "doors": doors,
+            "connected": coord.last_update_success,
+        },
+        "door_status": [
+            {"door": d, "open": status.door_open(d), "alarm": status.alarm(d) or status.open_timeout(d)}
+            for d in range(1, doors + 1)
+        ] if status else [],
+        "snapshot": coord.snapshot,
+        "categories": coord.store.categories,
+        "second_window": coord.store.data.get("second_window", 3.0),
+        "numbering": coord.store.data["numbering"],
+        "settings": {"backup": coord.store.data["backup"],
+                     "notify_keypad": coord.store.data.get("notify_keypad", True)},
+        "enrollment": coord.enrollment,
+    }
+
+
+def _reply(connection: websocket_api.ActiveConnection, msg: dict, result: Any = None) -> None:
+    connection.send_result(msg["id"], result)
+
+
+async def _guard(connection, msg, coro) -> None:
+    try:
+        result = await coro
+    except HomeAssistantError as ex:
+        connection.send_error(msg["id"], "failed", str(ex))
+        return
+    _reply(connection, msg, result)
+
+
+# --------------------------------------------------------------------- reading
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/devices"})
+@websocket_api.require_admin
+@callback
+def ws_devices(hass: HomeAssistant, connection, msg) -> None:
+    out = []
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        if hasattr(entry, "runtime_data"):
+            out.append({"entry_id": entry.entry_id, "title": entry.title, "serial": entry.unique_id})
+    _reply(connection, msg, out)
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/state", ENTRY: str,
+                                  vol.Optional("refresh", default=False): bool})
+@websocket_api.require_admin
+@websocket_api.async_response
+async def ws_state(hass: HomeAssistant, connection, msg) -> None:
+    async def run():
+        coord = _coordinator(hass, msg["entry_id"])
+        if msg["refresh"] or coord.snapshot is None:
+            await coord.async_refresh_snapshot(silent=True)
+        return _state(coord)
+    await _guard(connection, msg, run())
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/history", ENTRY: str,
+                                  vol.Optional("limit", default=200): vol.All(int, vol.Range(1, 500))})
+@websocket_api.require_admin
+@callback
+def ws_history(hass: HomeAssistant, connection, msg) -> None:
+    coord = _coordinator(hass, msg["entry_id"])
+    _reply(connection, msg, list(reversed(coord.store.data["history"][-msg["limit"]:])))
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/subscribe", ENTRY: str})
+@websocket_api.require_admin
+@callback
+def ws_subscribe(hass: HomeAssistant, connection, msg) -> None:
+    """Push access events and "changed" notices until the panel unsubscribes."""
+    entry_id = msg["entry_id"]
+    _coordinator(hass, entry_id)
+
+    @callback
+    def on_event(ev: dict) -> None:
+        connection.send_message(websocket_api.event_message(msg["id"], {"kind": "event", "event": ev}))
+
+    @callback
+    def on_changed(extra: dict | None = None) -> None:
+        connection.send_message(websocket_api.event_message(msg["id"], {"kind": "changed", **(extra or {})}))
+
+    unsubs = [async_dispatcher_connect(hass, signal_event(entry_id), on_event),
+              async_dispatcher_connect(hass, signal_changed(entry_id), on_changed)]
+
+    @callback
+    def unsubscribe() -> None:
+        for unsub in unsubs:
+            unsub()
+
+    connection.subscriptions[msg["id"]] = unsubscribe
+    _reply(connection, msg)
+
+
+# --------------------------------------------------------------------- persons
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/person/save", ENTRY: str,
+                                  vol.Optional("person"): vol.Any(None, int), vol.Required("name"): str,
+                                  vol.Optional("ha_person"): vol.Any(None, str)})
+@websocket_api.require_admin
+@websocket_api.async_response
+async def ws_person_save(hass, connection, msg) -> None:
+    coord = _coordinator(hass, msg["entry_id"])
+    await _guard(connection, msg, coord.async_run(coord.manager.person_save, msg.get("person"),
+                                                 msg["name"], msg.get("ha_person")))
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/person/delete", ENTRY: str,
+                                  vol.Required("person"): int})
+@websocket_api.require_admin
+@websocket_api.async_response
+async def ws_person_delete(hass, connection, msg) -> None:
+    coord = _coordinator(hass, msg["entry_id"])
+
+    async def run():
+        await coord.async_backup(f"before deleting person {msg['person']}")
+        await coord.async_run(coord.manager.person_delete, msg["person"])
+    await _guard(connection, msg, run())
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/person/enable", ENTRY: str,
+                                  vol.Required("person"): int, vol.Required("enabled"): bool})
+@websocket_api.require_admin
+@websocket_api.async_response
+async def ws_person_enable(hass, connection, msg) -> None:
+    coord = _coordinator(hass, msg["entry_id"])
+    await _guard(connection, msg, coord.async_run(coord.manager.person_enable, msg["person"], msg["enabled"]))
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/credential/set", ENTRY: str,
+                                  vol.Required("person"): int, vol.Required("digit"): vol.All(int, vol.Range(0, 9)),
+                                  vol.Optional("card"): vol.Any(None, vol.All(int, vol.Range(1, 4294967295))),
+                                  vol.Optional("code"): vol.Any(None, str)})
+@websocket_api.require_admin
+@websocket_api.async_response
+async def ws_credential_set(hass, connection, msg) -> None:
+    coord = _coordinator(hass, msg["entry_id"])
+    card = msg["card"] if "card" in msg else "keep"
+    code = msg["code"] if "code" in msg else "keep"
+    await _guard(connection, msg, coord.async_run(coord.manager.credential_set, msg["person"],
+                                                 msg["digit"], card, code))
+
+
+# --------------------------------------------------------------------- fingers
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/finger/delete", ENTRY: str,
+                                  vol.Required("user_id"): int, vol.Required("finger_id"): int})
+@websocket_api.require_admin
+@websocket_api.async_response
+async def ws_finger_delete(hass, connection, msg) -> None:
+    coord = _coordinator(hass, msg["entry_id"])
+    await _guard(connection, msg, coord.async_run(coord.manager.finger_delete, msg["user_id"], msg["finger_id"]))
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/finger/update", ENTRY: str,
+                                  vol.Required("user_id"): int, vol.Required("finger_id"): int,
+                                  vol.Optional("digit"): vol.Any(None, vol.All(int, vol.Range(0, 9))),
+                                  vol.Optional("physical"): vol.Any(None, vol.All(int, vol.Range(0, 9)))})
+@websocket_api.require_admin
+@websocket_api.async_response
+async def ws_finger_update(hass, connection, msg) -> None:
+    coord = _coordinator(hass, msg["entry_id"])
+    await _guard(connection, msg, coord.async_run(coord.manager.finger_update, msg["user_id"], msg["finger_id"],
+                                                 msg.get("digit"), msg.get("physical")))
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/enroll/start", ENTRY: str,
+                                  vol.Required("person"): int, vol.Required("digit"): vol.All(int, vol.Range(0, 9)),
+                                  vol.Optional("physical"): vol.Any(None, vol.All(int, vol.Range(0, 9)))})
+@websocket_api.require_admin
+@websocket_api.async_response
+async def ws_enroll_start(hass, connection, msg) -> None:
+    coord = _coordinator(hass, msg["entry_id"])
+
+    async def run():
+        user_id, baseline = await coord.async_run(coord.manager.enroll_start, msg["person"], msg["digit"])
+        enr = coord.start_enrollment(user_id, baseline, msg.get("physical"))
+        return {"user_id": user_id, "state": enr["state"]}
+    await _guard(connection, msg, run())
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/enroll/cancel", ENTRY: str})
+@websocket_api.require_admin
+@callback
+def ws_enroll_cancel(hass, connection, msg) -> None:
+    _coordinator(hass, msg["entry_id"]).enrollment = None
+    _reply(connection, msg)
+
+
+# ------------------------------------------------------------------ unassigned
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/unassigned/assign", ENTRY: str,
+                                  vol.Required("user_id"): int, vol.Required("person"): int,
+                                  vol.Required("digit"): vol.All(int, vol.Range(0, 9))})
+@websocket_api.require_admin
+@websocket_api.async_response
+async def ws_unassigned_assign(hass, connection, msg) -> None:
+    coord = _coordinator(hass, msg["entry_id"])
+    await _guard(connection, msg, coord.async_run(coord.manager.assign_unassigned, msg["user_id"],
+                                                 msg["person"], msg["digit"]))
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/user/delete", ENTRY: str,
+                                  vol.Required("user_id"): int})
+@websocket_api.require_admin
+@websocket_api.async_response
+async def ws_user_delete(hass, connection, msg) -> None:
+    coord = _coordinator(hass, msg["entry_id"])
+    await _guard(connection, msg, coord.async_run(coord.manager.delete_user_id, msg["user_id"]))
+
+
+# ------------------------------------------------------------------ categories
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/categories/save", ENTRY: str,
+                                  vol.Required("categories"): dict,
+                                  vol.Optional("second_window"): vol.Any(None, vol.Coerce(float)),
+                                  vol.Optional("numbering"): vol.In([NUMBERING_CATEGORY, NUMBERING_PLAIN])})
+@websocket_api.require_admin
+@websocket_api.async_response
+async def ws_categories_save(hass, connection, msg) -> None:
+    coord = _coordinator(hass, msg["entry_id"])
+    if "numbering" in msg:
+        coord.store.data["numbering"] = msg["numbering"]
+    await _guard(connection, msg, coord.async_run(coord.manager.categories_save, msg["categories"],
+                                                 msg.get("second_window")))
+
+
+# ------------------------------------------------------------------------ door
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/door/get", ENTRY: str,
+                                  vol.Optional("door", default=1): int})
+@websocket_api.require_admin
+@websocket_api.async_response
+async def ws_door_get(hass, connection, msg) -> None:
+    coord = _coordinator(hass, msg["entry_id"])
+
+    async def run():
+        settings = await coord.async_run(coord.manager.door_get, msg["door"], refresh=False)
+        now = await coord.async_run(coord.client.get_time, refresh=False)
+        return {"settings": settings, "device_time": now.isoformat() if now else None}
+    await _guard(connection, msg, run())
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/door/set", ENTRY: str,
+                                  vol.Optional("door", default=1): int, vol.Required("settings"): dict})
+@websocket_api.require_admin
+@websocket_api.async_response
+async def ws_door_set(hass, connection, msg) -> None:
+    coord = _coordinator(hass, msg["entry_id"])
+    await _guard(connection, msg, coord.async_run(coord.manager.door_set, msg["door"], msg["settings"],
+                                                 refresh=False))
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/door/control", ENTRY: str,
+                                  vol.Optional("door", default=1): int,
+                                  vol.Required("action"): vol.In(["open", "hold", "close", "cancel_alarm"]),
+                                  vol.Optional("seconds", default=5): vol.All(int, vol.Range(1, 254))})
+@websocket_api.require_admin
+@websocket_api.async_response
+async def ws_door_control(hass, connection, msg) -> None:
+    coord = _coordinator(hass, msg["entry_id"])
+    await _guard(connection, msg, coord.async_run(coord.manager.door_control, msg["door"], msg["action"],
+                                                 msg["seconds"], refresh=False))
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/clock/sync", ENTRY: str})
+@websocket_api.require_admin
+@websocket_api.async_response
+async def ws_clock_sync(hass, connection, msg) -> None:
+    coord = _coordinator(hass, msg["entry_id"])
+    await _guard(connection, msg, coord.async_run(coord.client.set_time, refresh=False))
+
+
+# --------------------------------------------------------------------- backups
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/backup/list", ENTRY: str})
+@websocket_api.require_admin
+@websocket_api.async_response
+async def ws_backup_list(hass, connection, msg) -> None:
+    coord = _coordinator(hass, msg["entry_id"])
+    await _guard(connection, msg, hass.async_add_executor_job(coord.manager.backup_list))
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/backup/create", ENTRY: str})
+@websocket_api.require_admin
+@websocket_api.async_response
+async def ws_backup_create(hass, connection, msg) -> None:
+    coord = _coordinator(hass, msg["entry_id"])
+    await _guard(connection, msg, coord.async_run(coord.manager.backup_create, "manual", refresh=False))
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/backup/download", ENTRY: str,
+                                  vol.Required("name"): str})
+@websocket_api.require_admin
+@websocket_api.async_response
+async def ws_backup_download(hass, connection, msg) -> None:
+    coord = _coordinator(hass, msg["entry_id"])
+    await _guard(connection, msg, hass.async_add_executor_job(coord.manager.backup_read, msg["name"]))
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/backup/restore", ENTRY: str,
+                                  vol.Optional("name"): str, vol.Optional("content"): str,
+                                  vol.Required("mode"): vol.In(["merge", "replace"])})
+@websocket_api.require_admin
+@websocket_api.async_response
+async def ws_backup_restore(hass, connection, msg) -> None:
+    coord = _coordinator(hass, msg["entry_id"])
+
+    async def run():
+        content = msg.get("content")
+        if content is None:
+            content = await hass.async_add_executor_job(coord.manager.backup_read, msg["name"])
+        return await coord.async_run(coord.manager.backup_restore, content, msg["mode"])
+    await _guard(connection, msg, run())
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/backup/import", ENTRY: str,
+                                  vol.Required("content"): str})
+@websocket_api.require_admin
+@websocket_api.async_response
+async def ws_backup_import(hass, connection, msg) -> None:
+    coord = _coordinator(hass, msg["entry_id"])
+    await _guard(connection, msg, hass.async_add_executor_job(coord.manager.backup_import, msg["content"]))
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/settings/save", ENTRY: str,
+                                  vol.Optional("backup"): {vol.Optional("on_change"): bool,
+                                                           vol.Optional("nightly"): bool,
+                                                           vol.Optional("keep"): vol.All(int, vol.Range(1, 500))},
+                                  vol.Optional("notify_keypad"): bool})
+@websocket_api.require_admin
+@callback
+def ws_settings_save(hass, connection, msg) -> None:
+    coord = _coordinator(hass, msg["entry_id"])
+    if "backup" in msg:
+        coord.store.data["backup"].update(msg["backup"])
+    if "notify_keypad" in msg:
+        coord.store.data["notify_keypad"] = msg["notify_keypad"]
+    coord.store.save()
+    _reply(connection, msg)
+
+
+COMMANDS = [ws_devices, ws_state, ws_history, ws_subscribe, ws_person_save, ws_person_delete,
+            ws_person_enable, ws_credential_set, ws_finger_delete, ws_finger_update, ws_enroll_start,
+            ws_enroll_cancel, ws_unassigned_assign, ws_user_delete, ws_categories_save, ws_door_get,
+            ws_door_set, ws_door_control, ws_clock_sync, ws_backup_list, ws_backup_create,
+            ws_backup_download, ws_backup_restore, ws_backup_import, ws_settings_save]
+
+
+@callback
+def async_register(hass: HomeAssistant) -> None:
+    for command in COMMANDS:
+        websocket_api.async_register_command(hass, command)

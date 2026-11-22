@@ -1,23 +1,22 @@
 """ZKAccess Native: ZKTeco PullSDK / ZKAccess devices in Home Assistant, without any DLL."""
 from __future__ import annotations
 
-import json
-from datetime import datetime
-from pathlib import Path
-
 import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import ATTR_DEVICE_ID, Platform
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
-from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.typing import ConfigType
-from pyzkaccess_native import User, ZKError
-from pyzkaccess_native import backup as zk_backup
+from homeassistant.loader import async_get_integration
+from pyzkaccess_native import User
 
+from . import websocket
 from .const import DOMAIN
 from .coordinator import ZKCoordinator
+from .panel import async_register_panel, async_unregister_panel
+from .store import AccessStore
 
 PLATFORMS = [Platform.BINARY_SENSOR, Platform.BUTTON, Platform.EVENT, Platform.SENSOR]
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
@@ -25,16 +24,17 @@ CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 type ZKConfigEntry = ConfigEntry[ZKCoordinator]
 
 _BASE = {vol.Required(ATTR_DEVICE_ID): cv.string}
+USER_ID = vol.All(vol.Coerce(int), vol.Range(1, 999_999_999))
 SCHEMAS = {
-    "set_user": vol.Schema({**_BASE, vol.Required("pin"): cv.positive_int,
+    "set_user": vol.Schema({**_BASE, vol.Required("user_id"): USER_ID,
                             vol.Optional("name"): cv.string,
                             vol.Optional("card"): cv.positive_int,
-                            vol.Optional("password"): cv.string}),
-    "delete_user": vol.Schema({**_BASE, vol.Required("pin"): cv.positive_int}),
-    "grant": vol.Schema({**_BASE, vol.Required("pin"): cv.positive_int,
+                            vol.Optional("code"): cv.string}),
+    "delete_user": vol.Schema({**_BASE, vol.Required("user_id"): USER_ID}),
+    "grant": vol.Schema({**_BASE, vol.Required("user_id"): USER_ID,
                          vol.Optional("timezone", default=1): cv.positive_int,
                          vol.Optional("doors", default=1): cv.positive_int}),
-    "revoke": vol.Schema({**_BASE, vol.Required("pin"): cv.positive_int}),
+    "revoke": vol.Schema({**_BASE, vol.Required("user_id"): USER_ID}),
     "open_door": vol.Schema({**_BASE, vol.Optional("door", default=1): cv.positive_int,
                              vol.Optional("seconds", default=5): vol.All(int, vol.Range(1, 254))}),
     "sync_clock": vol.Schema(_BASE),
@@ -54,49 +54,37 @@ def _coordinator(hass: HomeAssistant, device_id: str) -> ZKCoordinator:
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    """Register the services once for all devices."""
+    """Register the services and the panel API once for all devices."""
+    websocket.async_register(hass)
 
     async def handle(call: ServiceCall):
         coord = _coordinator(hass, call.data[ATTR_DEVICE_ID])
         dev = coord.client
         d = call.data
+        service = call.service
 
-        def run():
-            if not dev.connected:
-                dev.connect()
-            if call.service == "set_user":
-                user = dev.save_user(User(d["pin"], name=d.get("name"), card_no=d.get("card"),
-                                          password=d.get("password")))
-                return {"pin": user.pin, "name": user.name, "uid": user.uid}
-            if call.service == "delete_user":
-                dev.delete_user(d["pin"])
-            elif call.service == "grant":
-                dev.grant(d["pin"], d["timezone"], d["doors"])
-            elif call.service == "revoke":
-                dev.revoke(d["pin"])
-            elif call.service == "open_door":
-                dev.open_door(d["door"], d["seconds"])
-            elif call.service == "sync_clock":
-                dev.set_time()
-            elif call.service == "list_users":
-                return {"users": [{"pin": u.pin, "name": u.name, "card": u.card_no, "uid": u.uid}
-                                  for u in dev.get_users()]}
-            elif call.service == "backup":
-                folder = Path(hass.config.path(DOMAIN))
-                folder.mkdir(exist_ok=True)
-                path = folder / f"backup_{coord.config_entry.unique_id}_{datetime.now():%Y%m%d_%H%M%S}.json"
-                snap = zk_backup.backup(dev)
-                zk_backup.save(snap, path)
-                path.chmod(0o600)  # contains biometric templates
-                return {"file": str(path), "tables": {k: len(v) for k, v in snap["tables"].items()}}
-            return None
-
-        try:
-            result = await hass.async_add_executor_job(run)
-        except ZKError as ex:
-            raise HomeAssistantError(f"{call.service} failed: {ex}") from ex
-        coord.refresh_counts_soon()
-        return result
+        if service == "backup":
+            name = await coord.async_run(coord.manager.backup_create, "service", refresh=False)
+            return {"file": name}
+        if service == "set_user":
+            user = await coord.async_run(dev.save_user, User(d["user_id"], name=d.get("name"),
+                                                             card_no=d.get("card"), password=d.get("code")))
+            return {"user_id": user.user_id, "name": user.name}
+        if service == "delete_user":
+            await coord.async_run(dev.delete_user, d["user_id"])
+        elif service == "grant":
+            await coord.async_run(dev.grant, d["user_id"], d["timezone"], d["doors"])
+        elif service == "revoke":
+            await coord.async_run(dev.revoke, d["user_id"])
+        elif service == "open_door":
+            await coord.async_run(dev.open_door, d["door"], d["seconds"], refresh=False)
+        elif service == "sync_clock":
+            await coord.async_run(dev.set_time, refresh=False)
+        elif service == "list_users":
+            users = await coord.async_run(dev.get_users, refresh=False)
+            return {"users": [{"user_id": u.user_id, "name": u.name, "card": u.card_no or None,
+                               "has_code": bool(u.password)} for u in users]}
+        return None
 
     for name, schema in SCHEMAS.items():
         returns = name in ("set_user", "list_users", "backup")
@@ -107,10 +95,15 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ZKConfigEntry) -> bool:
-    coordinator = ZKCoordinator(hass, entry)
+    store = AccessStore(hass, entry.entry_id)
+    await store.async_load()
+    coordinator = ZKCoordinator(hass, entry, store)
     await coordinator.async_config_entry_first_refresh()
     entry.runtime_data = coordinator
+    await coordinator.async_setup_schedules()
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    integration = await async_get_integration(hass, DOMAIN)
+    await async_register_panel(hass, str(integration.version))
     entry.async_on_unload(entry.add_update_listener(_reload))
     return True
 
@@ -123,4 +116,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: ZKConfigEntry) -> bool:
     ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if ok:
         await entry.runtime_data.async_shutdown()
+        if not [e for e in hass.config_entries.async_loaded_entries(DOMAIN) if e.entry_id != entry.entry_id]:
+            async_unregister_panel(hass)
     return ok
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: ZKConfigEntry) -> None:
+    await AccessStore(hass, entry.entry_id).async_remove()

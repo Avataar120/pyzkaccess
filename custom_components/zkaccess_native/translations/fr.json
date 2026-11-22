@@ -43,6 +43,7 @@
           "event_type": {
             "state": {
               "granted": "Autorisé",
+              "action": "Action",
               "denied": "Refusé",
               "other": "Autre"
             }
@@ -59,14 +60,17 @@
       }
     },
     "sensor": {
-      "users": {
-        "name": "Utilisateurs"
+      "persons": {
+        "name": "Personnes"
       },
-      "templates": {
+      "fingerprints": {
         "name": "Empreintes"
       },
-      "last_user": {
-        "name": "Dernier utilisateur"
+      "cards": {
+        "name": "Cartes"
+      },
+      "last_person": {
+        "name": "Dernière personne"
       }
     },
     "button": {
@@ -81,77 +85,77 @@
   "services": {
     "set_user": {
       "name": "Créer ou modifier un utilisateur",
-      "description": "Crée l'utilisateur ou modifie les champs indiqués ; les autres sont conservés.",
+      "description": "Crée le UserID ou modifie les champs indiqués ; les autres sont conservés.",
       "fields": {
         "device_id": {
-          "name": "Device",
-          "description": "The ZKAccess device."
+          "name": "Appareil",
+          "description": "L'appareil ZKAccess."
         },
-        "pin": {
-          "name": "PIN",
-          "description": "User PIN (user number)."
+        "user_id": {
+          "name": "UserID",
+          "description": "Numéro de l'utilisateur dans l'appareil (tapé au clavier)."
         },
         "name": {
-          "name": "Name",
-          "description": "Display name."
+          "name": "Nom",
+          "description": "Nom affiché."
         },
         "card": {
-          "name": "Card number",
-          "description": "RFID card number."
+          "name": "Numéro de carte",
+          "description": "Numéro de la carte RFID."
         },
-        "password": {
-          "name": "Password",
-          "description": "Keypad password (digits)."
+        "code": {
+          "name": "Code clavier",
+          "description": "1 à 6 chiffres."
         }
       }
     },
     "delete_user": {
       "name": "Supprimer un utilisateur",
-      "description": "Supprime l'utilisateur, ses empreintes et ses autorisations.",
+      "description": "Supprime un UserID, ses empreintes et ses autorisations.",
       "fields": {
         "device_id": {
-          "name": "Device",
-          "description": "The ZKAccess device."
+          "name": "Appareil",
+          "description": "L'appareil ZKAccess."
         },
-        "pin": {
-          "name": "PIN",
-          "description": "User PIN (user number)."
+        "user_id": {
+          "name": "UserID",
+          "description": "Numéro de l'utilisateur dans l'appareil (tapé au clavier)."
         }
       }
     },
     "grant": {
       "name": "Autoriser l'accès",
-      "description": "Autorise un utilisateur à ouvrir des portes pendant une plage horaire.",
+      "description": "Autorise un UserID à ouvrir des portes pendant une plage horaire.",
       "fields": {
         "device_id": {
-          "name": "Device",
-          "description": "The ZKAccess device."
+          "name": "Appareil",
+          "description": "L'appareil ZKAccess."
         },
-        "pin": {
-          "name": "PIN",
-          "description": "User PIN (user number)."
+        "user_id": {
+          "name": "UserID",
+          "description": "Numéro de l'utilisateur dans l'appareil (tapé au clavier)."
         },
         "timezone": {
-          "name": "Time zone",
-          "description": "Time zone id (1 = always on factory devices)."
+          "name": "Plage horaire",
+          "description": "Numéro de plage (1 = toujours sur un appareil neuf)."
         },
         "doors": {
-          "name": "Doors",
-          "description": "Door bit mask: 1 = door 1, 2 = door 2, 4 = door 3, 8 = door 4."
+          "name": "Portes",
+          "description": "Masque : 1 = porte 1, 2 = porte 2, 4 = porte 3, 8 = porte 4."
         }
       }
     },
     "revoke": {
       "name": "Retirer l'accès",
-      "description": "Supprime toutes les autorisations d'un utilisateur.",
+      "description": "Supprime toutes les autorisations d'un UserID.",
       "fields": {
         "device_id": {
-          "name": "Device",
-          "description": "The ZKAccess device."
+          "name": "Appareil",
+          "description": "L'appareil ZKAccess."
         },
-        "pin": {
-          "name": "PIN",
-          "description": "User PIN (user number)."
+        "user_id": {
+          "name": "UserID",
+          "description": "Numéro de l'utilisateur dans l'appareil (tapé au clavier)."
         }
       }
     },
@@ -160,16 +164,16 @@
       "description": "Active le relais de gâche quelques secondes.",
       "fields": {
         "device_id": {
-          "name": "Device",
-          "description": "The ZKAccess device."
+          "name": "Appareil",
+          "description": "L'appareil ZKAccess."
         },
         "door": {
-          "name": "Door",
-          "description": "Door number."
+          "name": "Porte",
+          "description": "Numéro de porte."
         },
         "seconds": {
-          "name": "Seconds",
-          "description": "Duration (1-254)."
+          "name": "Secondes",
+          "description": "Durée (1-254)."
         }
       }
     },
@@ -178,28 +182,28 @@
       "description": "Règle l'horloge de l'appareil sur l'heure locale de Home Assistant.",
       "fields": {
         "device_id": {
-          "name": "Device",
-          "description": "The ZKAccess device."
+          "name": "Appareil",
+          "description": "L'appareil ZKAccess."
         }
       }
     },
     "list_users": {
       "name": "Lister les utilisateurs",
-      "description": "Renvoie les utilisateurs enregistrés dans l'appareil.",
+      "description": "Renvoie les UserID enregistrés dans l'appareil.",
       "fields": {
         "device_id": {
-          "name": "Device",
-          "description": "The ZKAccess device."
+          "name": "Appareil",
+          "description": "L'appareil ZKAccess."
         }
       }
     },
     "backup": {
       "name": "Sauvegarde",
-      "description": "Enregistre utilisateurs, empreintes et autorisations dans un fichier JSON du dossier zkaccess_native de la configuration.",
+      "description": "Enregistre personnes, empreintes, cartes et droits dans un fichier JSON du dossier zkaccess_native/backups de la configuration.",
       "fields": {
         "device_id": {
-          "name": "Device",
-          "description": "The ZKAccess device."
+          "name": "Appareil",
+          "description": "L'appareil ZKAccess."
         }
       }
     }
