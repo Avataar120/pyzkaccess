@@ -95,6 +95,7 @@ class ZKCoordinator(DataUpdateCoordinator[ZKData]):
         self._unsub_backup: Optional[Callable[[], None]] = None
         self._unsub_tags: Optional[Callable[[], None]] = None
         self.phone_pairing: Optional[dict[str, Any]] = None
+        self._last_raw: Optional[dict[str, Any]] = None
         #: device clock minus Home Assistant clock (seconds), measured before each sync
         self.clock_offset: Optional[float] = None
 
@@ -151,6 +152,7 @@ class ZKCoordinator(DataUpdateCoordinator[ZKData]):
     def _apply_raw(self, raw: dict[str, Any], force: bool = False) -> None:
         """Rebuild the snapshot when the device content changed (or when ``force``:
         integration-side data such as categories or physical fingers changed)."""
+        self._last_raw = raw
         digest = self.manager.fingerprint(raw)
         device_changed = digest != self._raw_hash
         if not device_changed and not force:
@@ -387,6 +389,19 @@ class ZKCoordinator(DataUpdateCoordinator[ZKData]):
         if silent:
             self.store.data["known_user_ids"] = sorted({u["Pin"] for u in raw["users"]})
         self._apply_raw(raw, force=True)
+
+    @callback
+    def async_rebuild(self) -> None:
+        """Rebuild the view after an integration-side change, without reading the device."""
+        if self._last_raw is not None:
+            self._apply_raw(self._last_raw, force=True)
+
+    def person_user_ids(self, person: int) -> list[int]:
+        """UserIDs of a person, from the last snapshot (no device access)."""
+        for p in (self.snapshot or {}).get("persons", []):
+            if p["num"] == person:
+                return [c["user_id"] for c in p["categories"]]
+        return []
 
     async def async_backup(self, reason: str) -> Optional[str]:
         try:

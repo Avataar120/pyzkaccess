@@ -251,6 +251,15 @@ class AccessManager:
         self.store.set_physical_finger(user_id, finger_id, None)
         self.store.save()
 
+    def finger_place(self, user_id: int, finger_id: int, physical: int | None,
+                     person_user_ids: list[int]) -> None:
+        """Set (or clear, with ``None``) the physical finger of a template. Integration-side only."""
+        if physical is None:
+            self.store.set_physical_finger(user_id, finger_id, None)
+        else:
+            self.store.set_physical_finger(user_id, finger_id, physical, person_user_ids or [user_id])
+        self.store.save()
+
     def finger_update(self, user_id: int, finger_id: int, digit: int | None = None,
                       physical: int | None = None) -> tuple[int, int]:
         """Move a fingerprint to another category of the same person and/or set its finger."""

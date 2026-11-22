@@ -193,6 +193,14 @@ async def ws_finger_delete(hass, connection, msg) -> None:
 @websocket_api.async_response
 async def ws_finger_update(hass, connection, msg) -> None:
     coord = _coordinator(hass, msg["entry_id"])
+    if msg.get("digit") is None:
+        # Only the physical finger (or "not placed"): Home Assistant data, no device access.
+        split = coord.manager.numbering.split(msg["user_id"])
+        person_ids = coord.person_user_ids(split[0]) if split else []
+        coord.manager.finger_place(msg["user_id"], msg["finger_id"], msg.get("physical"), person_ids)
+        coord.async_rebuild()
+        _reply(connection, msg, [msg["user_id"], msg["finger_id"]])
+        return
     await _guard(connection, msg, coord.async_run(coord.manager.finger_update, msg["user_id"], msg["finger_id"],
                                                  msg.get("digit"), msg.get("physical")))
 
@@ -256,7 +264,7 @@ async def ws_phone_update(hass, connection, msg) -> None:
 
     async def run():
         coord.manager.phone_update(msg["device_id"], msg.get("digit"), msg.get("enabled"), msg.get("name"))
-        await coord.async_refresh_snapshot(silent=True)
+        coord.async_rebuild()
     await _guard(connection, msg, run())
 
 
@@ -269,7 +277,7 @@ async def ws_phone_remove(hass, connection, msg) -> None:
 
     async def run():
         coord.manager.phone_remove(msg["device_id"])
-        await coord.async_refresh_snapshot(silent=True)
+        coord.async_rebuild()
     await _guard(connection, msg, run())
 
 

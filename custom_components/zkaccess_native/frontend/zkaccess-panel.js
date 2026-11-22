@@ -97,6 +97,9 @@ const I18N = {
     type_toggle: "Toggle (by state)", toggle_entity: "Entity", toggle_on: "When active →", toggle_off: "When inactive →",
     toggle_help: "Toggle: one presentation, Home Assistant picks the category from the state of an entity (active = on, locked, armed…).",
     clock_offset: "Offset before the last sync: {s} s",
+    on_hand: "Finger on the hand", not_placed: "— not placed —",
+    relay_confirm: "These UserIDs will lose the right to open the door (the device will refuse them; Home Assistant will still receive their actions): {ids}. Continue?",
+    confirm: "Confirm",
   },
   fr: {
     title: "Contrôle d'accès", device: "Appareil", connected: "Connecté", disconnected: "Déconnecté",
@@ -180,6 +183,9 @@ const I18N = {
     type_toggle: "Bascule (selon un état)", toggle_entity: "Entité", toggle_on: "Si active →", toggle_off: "Si inactive →",
     toggle_help: "Bascule : un seul passage, Home Assistant choisit la catégorie selon l'état d'une entité (active = on, verrouillé, armé…).",
     clock_offset: "Écart avant la dernière remise à l'heure : {s} s",
+    on_hand: "Doigt sur la main", not_placed: "— non placé —",
+    relay_confirm: "Ces UserID vont perdre le droit d'ouvrir la porte (le lecteur les refusera ; Home Assistant recevra quand même leurs actions) : {ids}. Continuer ?",
+    confirm: "Confirmer",
   },
 };
 
@@ -191,7 +197,7 @@ const STYLE = `
   --zk-accent: #0f766e; --zk-muted: var(--secondary-text-color, #52606d); --zk-line: var(--divider-color, #e3e8ee);
   --zk-card: var(--card-background-color, #fff); }
 * { box-sizing: border-box; }
-header { background: var(--app-header-background-color, var(--zk-card)); color: var(--app-header-text-color, inherit);
+header { position: sticky; background: var(--app-header-background-color, var(--zk-card)); color: var(--app-header-text-color, inherit);
   border-bottom: 1px solid var(--zk-line); position: sticky; top: 0; z-index: 2; }
 .bar { max-width: 1200px; margin: 0 auto; padding: 10px 16px 0; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
 .bar h1 { margin: 0; font-size: 20px; font-weight: 500; }
@@ -271,6 +277,11 @@ tr.click { cursor: pointer; } tr.click:hover td { background: color-mix(in srgb,
 .spin { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--zk-accent); border-right-color: transparent;
   display: inline-block; animation: s 1s linear infinite; }
 @keyframes s { to { transform: rotate(360deg); } }
+:host([busy]) header::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 3px;
+  background: linear-gradient(90deg, transparent, var(--zk-accent), transparent); background-size: 50% 100%;
+  background-repeat: no-repeat; animation: zkbar 1s linear infinite; }
+:host([busy]) .btn, :host([busy]) select, :host([busy]) input[type=checkbox] { pointer-events: none; opacity: .6; }
+@keyframes zkbar { from { background-position: -50% 0; } to { background-position: 150% 0; } }
 @media (max-width: 600px) { .bar h1 { font-size: 18px; } .status { margin-left: 0; } }
 `;
 
@@ -315,7 +326,13 @@ class ZkAccessPanel extends HTMLElement {
     return this._hass.connection.sendMessagePromise({ type: `${DOMAIN}/${type}`, entry_id: this._s.entryId, ...data });
   }
 
+  busy(delta) {
+    this._busyCount = Math.max(0, (this._busyCount || 0) + delta);
+    this.toggleAttribute("busy", this._busyCount > 0);
+  }
+
   async call(type, data, okMessage) {
+    this.busy(1);
     try {
       const r = await this.ws(type, data);
       if (okMessage) this.toast(okMessage);
@@ -323,6 +340,8 @@ class ZkAccessPanel extends HTMLElement {
     } catch (e) {
       this.toast(`${this.t("error")}: ${e.message || e.code || e}`, true);
       throw e;
+    } finally {
+      this.busy(-1);
     }
   }
 
@@ -401,7 +420,8 @@ class ZkAccessPanel extends HTMLElement {
   }
 
   async refresh() {
-    this._s.state = await this.ws("state", { refresh: true });
+    this.busy(1);
+    try { this._s.state = await this.ws("state"); } finally { this.busy(-1); }
     this.render(false);
   }
 
@@ -438,7 +458,11 @@ class ZkAccessPanel extends HTMLElement {
         s.finger = { ...f, user_id: r[0], finger_id: r[1] }; await this.refresh(); return;
       }
       case "finger-place": {
-        await this.call("finger/update", { user_id: Number(d.u), finger_id: Number(d.f), physical: el.value === "" ? null : Number(el.value) });
+        const physical = el.value === "" ? null : Number(el.value);
+        await this.call("finger/update", { user_id: Number(d.u), finger_id: Number(d.f), physical });
+        if (s.finger && s.finger.user_id === Number(d.u) && s.finger.finger_id === Number(d.f)) {
+          s.finger = physical == null ? null : { ...s.finger, physical };
+        }
         await this.refresh(); return;
       }
       case "finger-move": {
@@ -572,8 +596,20 @@ class ZkAccessPanel extends HTMLElement {
         on: Number(this.val(`ct-on-${d}`) || 0), off: Number(this.val(`ct-off-${d}`) || 0) });
     }
     const numbering = this.val("numbering") || "category";
-    await this.call("categories/save", { categories: out, second_window: Number(this.val("second-window") || 3), numbering }, this.t("saved"));
-    await this.refresh();
+    const old = this.cats(), affected = [];
+    for (const [d, c] of Object.entries(out)) {
+      if (c.relay || (old[d] && !old[d].relay)) continue;
+      for (const p of this.persons()) for (const cat of p.categories)
+        if (cat.digit === Number(d) && cat.authorized) affected.push(cat.user_id);
+    }
+    const save = async () => {
+      await this.call("categories/save", { categories: out, second_window: Number(this.val("second-window") || 3), numbering }, this.t("saved"));
+      await this.refresh();
+    };
+    if (affected.length) {
+      this._s.modal = { kind: "confirm", text: esc(this.t("relay_confirm", { ids: affected.join(", ") })), then: save, ok: this.t("confirm") };
+      this.render();
+    } else await save();
   }
 
   async importFile(file) {
@@ -744,6 +780,9 @@ class ZkAccessPanel extends HTMLElement {
       const f = this.fingersOf(p).find((x) => x.user_id === s.finger.user_id && x.finger_id === s.finger.finger_id);
       if (f) detail = `<div class="detail"><div style="flex:1 1 200px"><b style="font-weight:500">${esc(this.fingerName(f.physical))}</b>
         <div class="muted">${this.t("slot", { u: f.user_id, s: f.finger_id })}</div></div>
+        <label class="field">${this.t("on_hand")}<select data-act="finger-place" data-u="${f.user_id}" data-f="${f.finger_id}">
+          <option value="">${this.t("not_placed")}</option>${FINGER_KEYS.map((_, i) =>
+            `<option value="${i}" ${i === f.physical ? "selected" : ""}>${esc(this.fingerName(i))}</option>`).join("")}</select></label>
         ${this.plain() ? "" : `<label class="field">${this.t("category")}<select data-act="finger-cat">${Object.keys(cats).map((d) =>
           `<option value="${d}" ${Number(d) === f.digit ? "selected" : ""}>${esc(cats[d].name)} (${p.num * 10 + Number(d)})</option>`).join("")}</select></label>`}
         <button class="btn danger" data-act="finger-delete">${this.t("delete_fingerprint")}</button></div>`;
@@ -923,7 +962,7 @@ class ZkAccessPanel extends HTMLElement {
         ${(this._s.haTags || []).length ? `<div class="list">${this._s.haTags.map((tg, i) => {
           const conf = (st?.tags || {})[tg.id];
           return `<div class="row"><label class="chk" style="flex:1"><input type="checkbox" data-tag="${esc(tg.id)}" data-idx="${i}" ${conf ? "checked" : ""}>${esc(tg.name || tg.id)}</label>
-            <label class="row muted">${this.t("door_lbl")}<input id="tag-door-${i}" type="number" min="1" max="4" value="${conf?.door ?? 1}" style="width:64px"></label></div>`; }).join("")}</div>
+            ${(st?.device?.doors || 1) > 1 ? `<label class="row muted">${this.t("door_lbl")}<input id="tag-door-${i}" type="number" min="1" max="${st.device.doors}" value="${conf?.door ?? 1}" style="width:64px"></label>` : ""}</div>`; }).join("")}</div>
           <div class="actions" style="margin-top:10px"><button class="btn primary" data-act="tags-save">${this.t("save")}</button></div>`
           : `<p class="muted">${this.t("no_tags")}</p>`}</section>
         <section class="card"><h2>${this.t("general")}</h2>
@@ -939,7 +978,7 @@ class ZkAccessPanel extends HTMLElement {
     const cats = this.cats();
     if (m.kind === "confirm") {
       inner = `<p>${m.text}</p><div class="actions"><button class="btn" data-act="close-modal">${this.t("cancel")}</button>
-        <button class="btn danger" data-act="confirm-ok">${this.t("delete")}</button></div>`;
+        <button class="btn danger" data-act="confirm-ok">${m.ok || this.t("delete")}</button></div>`;
     } else if (m.kind === "person") {
       inner = `<h2>${this.t("new_person_title")}</h2><label class="field">${this.t("name")}<input id="np-name" maxlength="24"></label>
         <label class="field">${this.t("number_auto")}<input id="np-num" type="number" min="1" max="99"></label>
