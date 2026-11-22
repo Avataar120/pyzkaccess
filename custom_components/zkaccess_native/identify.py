@@ -12,7 +12,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from pyzkaccess_native import AccessEvent
 
-from .const import DOMAIN, IDENTIFY_SETTLE_SECONDS, IDENTIFY_TIMEOUT_SECONDS
+from .const import DOMAIN, IDENTIFY_STEP2_TIMEOUT_SECONDS, IDENTIFY_TIMEOUT_SECONDS
 from .helpers import access_method, signal_changed
 
 _LOGGER = logging.getLogger(__package__ + ".coordinator")
@@ -53,7 +53,7 @@ class IdentifyMixin:
     def _identify_event(self, ev: AccessEvent) -> None:
         idf = self.identify
         if idf is None or idf["state"] not in ("waiting", "again", "unknown", "notyet", "other"):
-            return  # busy (isolating / preparing / restoring)
+            return  # busy (isolating / restoring)
         if access_method(ev) in ("card", "code", "remote"):
             return
         uid = ev.user_id or 0
@@ -109,14 +109,9 @@ class IdentifyMixin:
         if self.identify is not idf:  # cancelled meanwhile
             await self._async_identify_restore()
             return
-        # The MA500 needs time before it matches a copy written on a new UserID (measured
-        # 22/11: first match after about 20 s, stable after about 45 s). Readings taken
-        # earlier are ignored rather than reported as "not the same finger".
-        idf.update(state="preparing", settle=IDENTIFY_SETTLE_SECONDS)
-        self._identify_notify()
-        await asyncio.sleep(IDENTIFY_SETTLE_SECONDS)
-        if self.identify is not idf:  # cancelled meanwhile (the cancel restores)
-            return
+        # No wait here: the MA500 takes 20 to 45 s to match a copy written on a new UserID
+        # (measured 22/11), but an early reading (unknown finger, former owner) only asks for
+        # the finger again ("notyet"), and step 2 gets a longer timeout.
         idf.update(state="again", mapping=mapping, started=time.monotonic())
         self._identify_notify()
 
@@ -172,9 +167,10 @@ class IdentifyMixin:
     @callback
     def _identify_check_timeout(self) -> None:
         idf = self.identify
-        if idf is None or idf["state"] in ("isolating", "preparing", "restoring"):
+        if idf is None or idf["state"] in ("isolating", "restoring"):
             return
-        if time.monotonic() - idf["started"] > IDENTIFY_TIMEOUT_SECONDS:
+        limit = IDENTIFY_STEP2_TIMEOUT_SECONDS if idf["step"] == 2 else IDENTIFY_TIMEOUT_SECONDS
+        if time.monotonic() - idf["started"] > limit:
             self.identify = None
             self._identify_notify({**idf, "state": "timeout"})
             if self.store.data.get("identify_pending"):

@@ -212,12 +212,6 @@ async def test_toggle_needs_valid_targets(hass: HomeAssistant, emulator, setup, 
     assert not msg["success"]
 
 
-@pytest.fixture(autouse=True)
-def _no_settle_wait(monkeypatch):
-    """The real MA500 delay (IDENTIFY_SETTLE_SECONDS) is not needed with the emulator."""
-    monkeypatch.setattr("custom_components.zkaccess_native.identify.IDENTIFY_SETTLE_SECONDS", 0)
-
-
 async def test_identify_finger(hass: HomeAssistant, emulator, setup):
     entry, call = setup
     coord = entry.runtime_data

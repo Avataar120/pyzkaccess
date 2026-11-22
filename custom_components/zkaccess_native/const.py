@@ -21,8 +21,8 @@ RETRY_MAX_SECONDS = 60
 #: How long the enrollment wizard waits for a new fingerprint (seconds).
 ENROLL_TIMEOUT_SECONDS = 300
 IDENTIFY_TIMEOUT_SECONDS = 60  # per step of a finger identification
-# Wait after isolating the fingerprints, before asking for the finger again (MA500 delay).
-IDENTIFY_SETTLE_SECONDS = 20
+# Step 2 (fingerprints isolated): the MA500 needs up to about 45 s to match the copies.
+IDENTIFY_STEP2_TIMEOUT_SECONDS = 90
 # Temporary UserIDs used to tell apart the fingers of one UserID during an identification:
 # each template gets its own UserID, without access rights. Hidden from the panel.
 IDENTIFY_PINS = range(9990, 10000)
