@@ -373,3 +373,26 @@ async def test_category_switched_off_for_a_person(hass: HomeAssistant, emulator,
     await poll(hass, entry)
     assert [e.data["result"] for e in events[-3:]] == ["granted", "action", "denied"]
     assert events[-1].data["person"] is None
+
+
+async def test_panel_title_setting(hass: HomeAssistant, emulator, setup, monkeypatch):
+    from custom_components.zkaccess_native import panel
+    entry, call = setup
+    titles, removed = [], []
+
+    async def fake_register(hass_, **kw):
+        titles.append(kw["sidebar_title"])
+    monkeypatch.setattr(panel.panel_custom, "async_register_panel", fake_register)
+    monkeypatch.setattr(panel.frontend, "async_remove_panel", lambda hass_, url: removed.append(url))
+    hass.config.components.add("frontend")
+    hass.data.pop("zkaccess_native_panel_registered", None)
+    hass.data["zkaccess_native_static_registered"] = True       # no HTTP server in tests
+    await panel.async_register_panel(hass, "1", entry.runtime_data.store.data.get("panel_title"))
+    assert titles == ["Access control"]
+    await call("settings/save", panel_title="Contrôle d'accès")
+    await hass.async_block_till_done()
+    assert titles[-1] == "Contrôle d'accès" and removed == ["zkaccess-native"]
+    assert (await call("state"))["settings"]["panel_title"] == "Contrôle d'accès"
+    await call("settings/save", panel_title="  ")                 # empty: back to the default
+    await hass.async_block_till_done()
+    assert titles[-1] == "Access control"

@@ -85,7 +85,7 @@ const I18N = {
     restore_title: "Restore {name}", merge: "Merge (add and update)", replace_all: "Replace (exact copy)",
     restore_help: "A backup of the current state is made first.",
     general: "General", notify_keypad: "Notify when a user is added on the keypad",
-    poll_interval: "Reader polling interval (s)", poll_help: "How often the device's real-time log is read: shorter reacts faster, longer loads the device less (0.3 to 3 s).",
+    panel_title: "Name in the sidebar (empty = default)", poll_interval: "Reader polling interval (s)", poll_help: "How often the device's real-time log is read: shorter reacts faster, longer loads the device less (0.3 to 3 s).",
     saved: "Saved", error: "Error", loading: "Loading…", no_device: "No ZKAccess device is configured.",
     reason_change: "Change detected", reason_nightly: "Nightly", reason_manual: "Manual",
     phones: "Phones", phones_help: "A phone that scans one of the NFC tags declared in Settings acts like a badge of the chosen category.",
@@ -185,7 +185,7 @@ const I18N = {
     restore_title: "Restaurer {name}", merge: "Fusionner (ajoute et met à jour)", replace_all: "Remplacer (copie exacte)",
     restore_help: "Une sauvegarde de l'état actuel est faite avant.",
     general: "Général", notify_keypad: "Notifier quand un utilisateur est ajouté au clavier",
-    poll_interval: "Intervalle d'interrogation du lecteur (s)", poll_help: "Fréquence de lecture du journal temps réel du lecteur : plus court réagit plus vite, plus long sollicite moins le lecteur (0,3 à 3 s).",
+    panel_title: "Nom dans le menu latéral (vide = par défaut)", poll_interval: "Intervalle d'interrogation du lecteur (s)", poll_help: "Fréquence de lecture du journal temps réel du lecteur : plus court réagit plus vite, plus long sollicite moins le lecteur (0,3 à 3 s).",
     saved: "Enregistré", error: "Erreur", loading: "Chargement…", no_device: "Aucun appareil ZKAccess n'est configuré.",
     reason_change: "Changement détecté", reason_nightly: "Nocturne", reason_manual: "Manuelle",
     phones: "Téléphones", phones_help: "Un téléphone qui scanne un des tags NFC déclarés dans les réglages agit comme un badge de la catégorie choisie.",
@@ -590,7 +590,7 @@ class ZkAccessPanel extends HTMLElement {
       case "cats-save": await this.saveCategories(); return;
       case "settings-save": {
         await this.call("settings/save", { backup: { on_change: this.chk("bk-change"), nightly: this.chk("bk-nightly"), keep: Number(this.val("bk-keep")) },
-          notify_keypad: this.chk("notify-keypad"),
+          notify_keypad: this.chk("notify-keypad"), panel_title: this.val("panel-title"),
           poll_interval: Math.min(3, Math.max(0.3, Number(this.val("poll-interval").replace(",", ".")) || 1)) }, this.t("saved"));
         await this.refresh(); return;
       }
@@ -770,7 +770,7 @@ class ZkAccessPanel extends HTMLElement {
       : `<span class="muted">${esc(st?.device?.title || "")}</span>`;
     const tabs = ["people", "activity", "door", "settings"].map((v) =>
       `<button class="tab ${s.view === v ? "on" : ""}" data-act="tab" data-v="${v}">${this.t("tab_" + v)}</button>`).join("");
-    return `<header><div class="bar"><span id="menu-slot"></span><h1>${this.t("title")}</h1>${devSel}
+    return `<header><div class="bar"><span id="menu-slot"></span><h1>${esc(this._s.state?.settings?.panel_title || this.t("title"))}</h1>${devSel}
       ${st ? `<button class="btn sm status" data-act="reload" title="${this.t("reload")}" aria-label="${this.t("reload")}">↻ ${this.t("reload")}</button>` : ""}
       ${st ? `<span class="pill" style="background:${connected ? "#e7f6ee" : "#fdecea"};color:${connected ? "#067647" : "#b42318"}">● ${this.t(connected ? "connected" : "disconnected")}</span>` : ""}
       </div><nav>${tabs}</nav></header>`;
@@ -1077,6 +1077,7 @@ class ZkAccessPanel extends HTMLElement {
           <div class="actions" style="margin-top:10px"><button class="btn primary" data-act="tags-save">${this.t("save")}</button></div>`
           : `<p class="muted">${this.t("no_tags")}</p>`}</section>
         <section class="card"><h2>${this.t("general")}</h2>
+        <label class="field" style="margin-bottom:12px">${this.t("panel_title")}<input id="panel-title" maxlength="40" placeholder="${esc(this.t("title"))}" value="${esc(st?.settings?.panel_title || "")}"></label>
         <label class="chk"><input type="checkbox" id="notify-keypad" ${st?.settings?.notify_keypad !== false ? "checked" : ""}>${this.t("notify_keypad")}</label>
         <label class="field" style="margin-top:12px">${this.t("poll_interval")}<input id="poll-interval" type="number" min="0.3" max="3" step="0.1" value="${st?.settings?.poll_interval ?? 1}" style="width:100px"></label>
         <span class="muted">${this.t("poll_help")}</span>

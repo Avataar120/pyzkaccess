@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Home Assistant integration: the sidebar name of the *Access control* page can be changed
+  in its Settings (empty = default); applied at once, kept across restarts.
+
 ## 0.4.0 - 2026-11-22
 
 - New logo (integration brand icons regenerated from `docs/assets/logo.svg`).

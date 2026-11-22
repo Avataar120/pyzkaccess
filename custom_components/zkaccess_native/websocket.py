@@ -12,6 +12,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from .const import (CONF_POLL_INTERVAL, DEFAULT_SECOND_WINDOW, DOMAIN, NUMBERING_CATEGORY, NUMBERING_PLAIN,
                     POLL_INTERVAL_MAX, POLL_INTERVAL_MIN)
 from .coordinator import ZKCoordinator, poll_interval, signal_changed, signal_event
+from .panel import async_rename_panel
 
 ENTRY = vol.Required("entry_id")
 
@@ -46,6 +47,7 @@ def _state(coord: ZKCoordinator) -> dict[str, Any]:
         "numbering": coord.store.data["numbering"],
         "settings": {"backup": coord.store.data["backup"],
                      "notify_keypad": coord.store.data.get("notify_keypad", True),
+                     "panel_title": coord.store.data.get("panel_title"),
                      "poll_interval": poll_interval(coord.config_entry.options)},
         "enrollment": coord.enrollment,
         "tags": coord.store.data["tags"],
@@ -472,6 +474,7 @@ async def ws_backup_import(hass, connection, msg) -> None:
                                                            vol.Optional("nightly"): bool,
                                                            vol.Optional("keep"): vol.All(int, vol.Range(1, 500))},
                                   vol.Optional("notify_keypad"): bool,
+                                  vol.Optional("panel_title"): vol.All(str, vol.Length(max=40)),
                                   vol.Optional("poll_interval"): vol.All(vol.Coerce(float),
                                                                          vol.Range(POLL_INTERVAL_MIN, POLL_INTERVAL_MAX))})
 @websocket_api.require_admin
@@ -486,6 +489,11 @@ def ws_settings_save(hass, connection, msg) -> None:
         coord.store.data["backup"].update(msg["backup"])
     if "notify_keypad" in msg:
         coord.store.data["notify_keypad"] = msg["notify_keypad"]
+    if "panel_title" in msg:
+        title = msg["panel_title"].strip() or None
+        if title != coord.store.data.get("panel_title"):
+            coord.store.data["panel_title"] = title
+            hass.async_create_task(async_rename_panel(hass, title))
     coord.store.save()
     _reply(connection, msg)
 

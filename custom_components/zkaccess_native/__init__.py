@@ -15,7 +15,7 @@ from pyzkaccess_native import User
 from . import websocket
 from .const import DOMAIN
 from .coordinator import ZKCoordinator
-from .panel import async_register_panel, async_unregister_panel
+from .panel import async_register_panel, async_rename_panel, async_unregister_panel
 from .store import AccessStore
 
 PLATFORMS = [Platform.BINARY_SENSOR, Platform.BUTTON, Platform.EVENT, Platform.SENSOR]
@@ -103,7 +103,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ZKConfigEntry) -> bool:
     await coordinator.async_setup_schedules()
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     integration = await async_get_integration(hass, DOMAIN)
-    await async_register_panel(hass, str(integration.version))
+    await async_register_panel(hass, str(integration.version), store.data.get("panel_title"))
     entry.async_on_unload(entry.add_update_listener(_reload))
     return True
 
