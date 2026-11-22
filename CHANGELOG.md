@@ -13,6 +13,8 @@
   off in Settings, where the response time can also be measured on demand. No reconnection
   attempt while the device boots.
 - Protocol: reboot (control operation 3) verified on the MA500.
+- Panel and activity card: their URL carries a hash of the file, so an update is always
+  loaded (it could stay cached when the version number did not change).
 
 ## 0.5.1 - 2026-11-22
 
