@@ -256,6 +256,7 @@ async def ws_identify_start(hass, connection, msg) -> None:
     coord = _coordinator(hass, msg["entry_id"])
 
     async def run():
+        await coord.async_wait_restore()       # the previous identification is put back first
         return coord.start_identify(msg.get("person"), msg.get("physical"))
     await _guard(connection, msg, run())
 

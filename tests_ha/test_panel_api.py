@@ -396,3 +396,38 @@ async def test_panel_title_setting(hass: HomeAssistant, emulator, setup, monkeyp
     await call("settings/save", panel_title="  ")                 # empty: back to the default
     await hass.async_block_till_done()
     assert titles[-1] == "Access control"
+
+
+async def test_identify_exchanges_are_few(hass: HomeAssistant, emulator, setup):
+    """Each exchange costs ~0.5 s on some readers: the isolation must stay short."""
+    entry, call = setup
+    coord = entry.runtime_data
+    await call("person/save", person=12, name="Bob")
+    with ZKAccess("127.0.0.1", emulator.port) as dev:
+        from pyzkaccess_native import User
+        dev.save_user(User(user_id=120, name="Bob"))
+        for f in range(4):
+            dev.save_template(Template(user_id=120, finger_id=f, template=bytes([65 + f]) * 32))
+    counter = {"n": 0}
+    original = coord.client._exchange
+
+    def counting(*args, **kwargs):
+        counter["n"] += 1
+        return original(*args, **kwargs)
+    coord.client._exchange = counting
+
+    def run(func, *args):
+        counter["n"] = 0
+        with coord.client.lock:
+            result = func(*args)
+        return result, counter["n"]
+
+    (mapping, templates, slot), copy_n = await hass.async_add_executor_job(run, coord.manager.identify_copy, 120)
+    _, hide_n = await hass.async_add_executor_job(run, coord.manager.identify_hide, 120)
+    _, restore_n = await hass.async_add_executor_job(run, coord.manager.identify_restore, 120, mapping, templates, slot)
+    coord.client._exchange = original
+    assert (copy_n, hide_n, restore_n) == (3 + 2 * 4, 1, 2 + 3 * 4)
+    with ZKAccess("127.0.0.1", emulator.port) as dev:
+        assert sorted((t.finger_id, t.template[:1]) for t in dev.get_templates(120)) == [
+            (0, b"A"), (1, b"B"), (2, b"C"), (3, b"D")]
+        assert [u.user_id for u in dev.get_users() if u.user_id >= 9990] == []

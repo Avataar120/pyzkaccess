@@ -90,53 +90,95 @@ class AccessManager:
         }
 
     # ----------------------------------------------------------- identification
-    def identify_copy(self, user_id: int) -> dict[int, int]:
-        """Step 1 of the isolation: copy each template of ``user_id`` to its own
-        temporary UserID, without access rights (the device then reports that UserID
-        for this finger). Returns ``{temporary UserID: finger slot}``. Nothing is
-        removed here; on error the temporary UserIDs are deleted again."""
+    @staticmethod
+    def _template_row(user_id: int, finger_id: int, source: Template, slot: int) -> dict[str, Any]:
+        """A templatev10 row written directly, with the internal slot already known (what
+        save_template would send, without re-reading the user table)."""
+        row = Template(user_id=user_id, finger_id=finger_id, template=source.template, valid=source.valid).to_row()
+        row["UID"] = slot
+        row.setdefault("EndTag", 13)
+        return row
+
+    def identify_copy(self, user_id: int) -> tuple[dict[int, int], dict[int, Template], int]:
+        """Step 1 of the isolation: copy each template of ``user_id`` to its own temporary
+        UserID, without access rights (the device then reports that UserID for this finger).
+        Returns ``({temporary UserID: finger slot}, {finger slot: template}, slot of user_id)``.
+        Nothing is removed here; on error the temporary UserIDs are deleted again.
+
+        Few exchanges with the device (each costs about half a second on some readers):
+        2 reads, then per template 1 user write, 1 read for the slots, 1 template write."""
         templates = self.client.get_templates(user_id)
         if len(templates) < 2:
             raise SafetyError(f"UserID {user_id} has fewer than 2 fingerprints")
-        existing = {u.user_id for u in self.client.get_users()}
+        users = self.client.read_table("user", fields=["UID", "Pin"])
+        existing = {u["Pin"] for u in users}
+        owner_slot = next((u.get("UID") for u in users if u["Pin"] == user_id), None)
+        if owner_slot is None:
+            raise SafetyError(f"UserID {user_id} does not exist")
         free = [pin for pin in IDENTIFY_PINS if pin not in existing]
         if len(free) < len(templates):
             raise SafetyError("not enough free temporary UserIDs (9990-9999)")
         mapping: dict[int, int] = {}
         try:
             for t, pin in zip(templates, free):
-                self.client.save_user(User(user_id=pin, name="identify"), merge=False)
+                self.client.write_records("user", [{"Pin": pin, "Name": "identify"}])
                 mapping[pin] = t.finger_id
-                self.client.save_template(Template(user_id=pin, finger_id=0, template=t.template, valid=t.valid))
+            slots = {u["Pin"]: u.get("UID") for u in self.client.read_table("user", fields=["UID", "Pin"])}
+            taken = [v for v in slots.values() if v is not None]
+            for pin in mapping:
+                # Same guard as save_template: a template must never land on a shared slot.
+                if slots.get(pin) is None or taken.count(slots[pin]) > 1:
+                    raise SafetyError(f"temporary UserID {pin} got no unique internal slot")
+            for t, pin in zip(templates, mapping):
+                self.client.write_records("templatev10", [self._known_template(self._template_row(pin, 0, t, slots[pin]))])
         except Exception:
             for pin in mapping:
-                self.client.delete_user(pin)
+                self._delete_temporary(pin)
             raise
-        return mapping
+        return mapping, {t.finger_id: t for t in templates}, owner_slot
+
+    def _known_template(self, row: dict[str, Any]) -> dict[str, Any]:
+        names = set(self.client.table("templatev10").field_names)
+        return {k: v for k, v in row.items() if k in names}
+
+    def _delete_temporary(self, pin: int) -> None:
+        """A temporary UserID never had rights: its templates and its record (2 requests)."""
+        self.client.delete_records("templatev10", {"Pin": pin})
+        self.client.delete_records("user", {"Pin": pin})
 
     def identify_hide(self, user_id: int) -> None:
         """Step 2 of the isolation: remove the templates of ``user_id`` (they are
         kept on the temporary UserIDs), so the device reports the temporary UserID."""
         self.client.delete_templates(user_id)
 
-    def identify_restore(self, user_id: int, mapping: dict[int, int]) -> None:
-        """Put the templates back on ``user_id``, check them, then delete the
-        temporary UserIDs. Safe to run again after a partial restore."""
+    def identify_restore(self, user_id: int, mapping: dict[int, int],
+                         templates: dict[int, Template] | None = None, slot: int | None = None) -> None:
+        """Put the templates back on ``user_id``, check them, then delete the temporary
+        UserIDs. Safe to run again after a partial restore. With ``templates`` and ``slot``
+        (kept from the copy) nothing is re-read but the check; without them (after a
+        restart) the templates are read back from the temporary UserIDs."""
         present = {t.finger_id for t in self.client.get_templates(user_id, with_data=False)}
-        for pin, finger in mapping.items():
-            if finger in present:
-                continue
-            source = self.client.get_templates(pin)
-            if not source:
-                raise SafetyError(f"temporary UserID {pin} has no template (finger {finger} of {user_id})")
-            self.client.save_template(Template(user_id=user_id, finger_id=finger,
-                                               template=source[0].template, valid=source[0].valid))
-        present = {t.finger_id for t in self.client.get_templates(user_id, with_data=False)}
+        missing_fingers = [(pin, finger) for pin, finger in mapping.items() if finger not in present]
+        if missing_fingers:
+            if slot is None:
+                slot = next((u.get("UID") for u in self.client.read_table("user", fields=["UID", "Pin"])
+                             if u["Pin"] == user_id), None)
+                if slot is None:
+                    raise SafetyError(f"UserID {user_id} does not exist")
+            for pin, finger in missing_fingers:
+                source = (templates or {}).get(finger)
+                if source is None:
+                    found = self.client.get_templates(pin)
+                    if not found:
+                        raise SafetyError(f"temporary UserID {pin} has no template (finger {finger} of {user_id})")
+                    source = found[0]
+                self.client.write_records("templatev10", [self._known_template(self._template_row(user_id, finger, source, slot))])
+            present = {t.finger_id for t in self.client.get_templates(user_id, with_data=False)}
         missing = set(mapping.values()) - present
         if missing:
             raise SafetyError(f"fingers {sorted(missing)} of UserID {user_id} could not be restored")
         for pin in mapping:
-            self.client.delete_user(pin)
+            self._delete_temporary(pin)
 
     @staticmethod
     def fingerprint(raw: dict[str, Any]) -> str:

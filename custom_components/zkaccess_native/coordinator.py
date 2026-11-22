@@ -1,6 +1,7 @@
 """Polling coordinator: one TCP session per device, shared by entities, services and the panel."""
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from dataclasses import dataclass, field
@@ -103,6 +104,10 @@ class ZKCoordinator(DataUpdateCoordinator[ZKData]):
         #: finger identification in progress (reader events are not published meanwhile)
         self.identify: Optional[dict[str, Any]] = None
         self._identify_restoring = False
+        #: templates and owner slot kept from the copy, so the restore re-reads nothing
+        self._identify_cache: Optional[tuple[int, dict[int, Any], int]] = None
+        #: restore running in the background after a finger was identified
+        self._restore_task: Optional[asyncio.Task] = None
         #: door -> deadline: the device's "remote opening" echo of a door opened for a phone
         self._phone_echo: dict[int, float] = {}
         self._unsub_nightly: Optional[Callable[[], None]] = None
@@ -459,7 +464,14 @@ class ZKCoordinator(DataUpdateCoordinator[ZKData]):
 
     # -------------------------------------------------------------- operations
     async def async_run(self, func: Callable[..., T], *args: Any, refresh: bool = True) -> T:
-        """Run a manager operation in the executor, then refresh the snapshot."""
+        """Run a manager operation in the executor, then refresh the snapshot.
+
+        An identification restore running in the background goes first: an operation
+        started meanwhile (delete the finger just identified...) waits for it."""
+        task = self._restore_task
+        if task is not None and not task.done() and asyncio.current_task() is not task:
+            await asyncio.wait({task})
+
         def job() -> T:
             # One uninterrupted sequence: the polling cannot slip between its commands.
             with self.client.lock:
@@ -570,9 +582,10 @@ class ZKCoordinator(DataUpdateCoordinator[ZKData]):
         if idf["step"] == 2:
             mapping = idf.get("mapping") or {}
             if uid in mapping:
-                idf.update(state="restoring")
-                self._identify_notify()
-                self.hass.async_create_task(self._async_identify_finish(idf["user_id"], mapping[uid]))
+                # The answer is known: show it at once, put the fingerprints back behind it.
+                user_id = idf["user_id"]
+                self._identify_found(user_id, mapping[uid])
+                self._restore_task = self.hass.async_create_task(self._async_identify_restore())
             else:
                 idf.update(state="other")  # another finger than the one of step 1
                 self._identify_notify()
@@ -591,7 +604,8 @@ class ZKCoordinator(DataUpdateCoordinator[ZKData]):
 
     async def _async_identify_isolate(self, idf: dict[str, Any], user_id: int) -> None:
         try:
-            mapping = await self.async_run(self.manager.identify_copy, user_id, refresh=False)
+            mapping, templates, slot = await self.async_run(self.manager.identify_copy, user_id, refresh=False)
+            self._identify_cache = (user_id, templates, slot)
             # Recorded on disk before anything is removed: a restart undoes the isolation.
             self.store.data["identify_pending"] = {"user_id": user_id,
                                                    "temps": {str(k): v for k, v in mapping.items()}}
@@ -610,14 +624,11 @@ class ZKCoordinator(DataUpdateCoordinator[ZKData]):
         idf.update(state="again", mapping=mapping, started=time.monotonic())
         self._identify_notify()
 
-    async def _async_identify_finish(self, user_id: int, finger_id: int) -> None:
-        if not await self._async_identify_restore():
-            idf = self.identify or {}
-            self.identify = None
-            self._identify_notify({**idf, "state": "error",
-                                   "error": "the fingerprints could not be put back yet; retrying"})
-            return
-        self._identify_found(user_id, finger_id)
+    async def async_wait_restore(self) -> None:
+        """Wait for a background restore (before starting another identification)."""
+        task = self._restore_task
+        if task is not None and not task.done():
+            await asyncio.wait({task})
 
     async def _async_identify_restore(self) -> bool:
         """Undo a pending isolation (also after a restart). True when nothing is left."""
@@ -629,7 +640,10 @@ class ZKCoordinator(DataUpdateCoordinator[ZKData]):
         self._identify_restoring = True
         try:
             mapping = {int(k): v for k, v in pending["temps"].items()}
-            await self.async_run(self.manager.identify_restore, pending["user_id"], mapping, refresh=False)
+            cache = self._identify_cache
+            templates, slot = (cache[1], cache[2]) if cache and cache[0] == pending["user_id"] else (None, None)
+            await self.async_run(self.manager.identify_restore, pending["user_id"], mapping, templates, slot,
+                                 refresh=False)
         except HomeAssistantError as ex:
             _LOGGER.error("Identification: restoring the fingerprints of UserID %s failed (will retry): %s",
                           pending["user_id"], ex)
@@ -637,6 +651,7 @@ class ZKCoordinator(DataUpdateCoordinator[ZKData]):
         finally:
             self._identify_restoring = False
         self.store.data.pop("identify_pending", None)
+        self._identify_cache = None
         await self.store.async_save_now()
         self._snapshot_at = None
         return True

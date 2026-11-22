@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Home Assistant integration: faster finger identification on a UserID with several
+  fingerprints. Fewer exchanges with the device (4 fingerprints: 11 instead of 18 to separate
+  them, 14 instead of 26 to put them back), and the result shows as soon as the finger is
+  recognized while the fingerprints are put back in the background (an action started
+  meanwhile, such as deleting that fingerprint, waits for it).
+
 ## 0.5.1 - 2026-11-22
 
 - README: supported devices made explicit (PullSDK / ZKAccess access control devices; time
