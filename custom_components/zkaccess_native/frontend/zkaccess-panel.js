@@ -1086,7 +1086,21 @@ class ZkAccessPanel extends HTMLElement {
           <button class="btn primary" style="margin-left:auto" data-act="backup-now">${this.t("backup_now")}</button></div>
         <div class="list">${backups}</div>
         <div class="actions" style="justify-content:flex-start;margin-top:10px"><button class="btn" data-act="backup-import">${this.t("import_file")}</button></div></section></div>
-      <div class="side"><section class="card"><h2>${this.t("clock")}</h2><div style="font-size:24px;font-weight:500">${this._s.door?.device_time ? this.fmtTime(this._s.door.device_time) : "—"}</div>
+      <div class="side"><section class="card"><h2>${this.t("general")}</h2>
+        <label class="field" style="margin-bottom:12px">${this.t("panel_title")}<input id="panel-title" maxlength="40" placeholder="${esc(this.t("title"))}" value="${esc(st?.settings?.panel_title || "")}"></label>
+        <label class="chk"><input type="checkbox" id="notify-keypad" ${st?.settings?.notify_keypad !== false ? "checked" : ""}>${this.t("notify_keypad")}</label>
+        <label class="field" style="margin-top:12px">${this.t("poll_interval")}<input id="poll-interval" type="number" min="0.3" max="3" step="0.1" value="${st?.settings?.poll_interval ?? 1}" style="width:100px"></label>
+        <span class="muted">${this.t("poll_help")}</span>
+        <hr style="border:0;border-top:3px solid color-mix(in srgb, var(--zk-muted) 55%, transparent);margin:26px 0 18px">
+        <h3 style="margin:0 0 10px;font-size:16px;font-weight:500">${this.t("maintenance")}</h3>
+        <label class="chk"><input type="checkbox" id="mt-nightly" ${st?.settings?.maintenance?.nightly_restart !== false ? "checked" : ""}>${this.t("nightly_restart")}</label>
+        <label class="chk" style="margin-top:6px"><input type="checkbox" id="mt-slow" ${st?.settings?.maintenance?.slow_restart !== false ? "checked" : ""}>${this.t("slow_restart")}</label>
+        <div class="muted" style="margin-top:8px">${this.t("response_time")} : ${st?.response_time != null ? Number(st.response_time).toFixed(3) + " s" : this.t("not_measured")}
+          ${st?.last_restart ? ` · ${this.t("last_restart", { t: esc(this.fmtTime(st.last_restart.time)), r: esc(this.t("restart_" + st.last_restart.reason)) })}` : ""}</div>
+        <div class="row" style="margin-top:8px"><button class="btn sm" data-act="measure-response">${this.t("measure_now")}</button>
+          <button class="btn sm danger" data-act="device-restart">${this.t("restart_device")}</button></div>
+        <div class="actions" style="margin-top:12px"><button class="btn primary" data-act="settings-save">${this.t("save")}</button></div></section>
+        <section class="card"><h2>${this.t("clock")}</h2><div style="font-size:24px;font-weight:500">${this._s.door?.device_time ? this.fmtTime(this._s.door.device_time) : "—"}</div>
           ${st?.clock_offset != null ? `<div class="muted">${this.t("clock_offset", { s: st.clock_offset })}</div>` : ""}
           <div class="actions" style="justify-content:flex-start;margin-top:12px"><button class="btn" data-act="clock-sync">${this.t("sync_now")}</button></div></section>
         <section class="card"><h2>${this.t("device_info")}</h2><div class="list">
@@ -1101,19 +1115,7 @@ class ZkAccessPanel extends HTMLElement {
             ${(st?.device?.doors || 1) > 1 ? `<label class="row muted">${this.t("door_lbl")}<input id="tag-door-${i}" type="number" min="1" max="${st.device.doors}" value="${conf?.door ?? 1}" style="width:64px"></label>` : ""}</div>`; }).join("")}</div>
           <div class="actions" style="margin-top:10px"><button class="btn primary" data-act="tags-save">${this.t("save")}</button></div>`
           : `<p class="muted">${this.t("no_tags")}</p>`}</section>
-        <section class="card"><h2>${this.t("general")}</h2>
-        <label class="field" style="margin-bottom:12px">${this.t("panel_title")}<input id="panel-title" maxlength="40" placeholder="${esc(this.t("title"))}" value="${esc(st?.settings?.panel_title || "")}"></label>
-        <label class="chk"><input type="checkbox" id="notify-keypad" ${st?.settings?.notify_keypad !== false ? "checked" : ""}>${this.t("notify_keypad")}</label>
-        <label class="field" style="margin-top:12px">${this.t("poll_interval")}<input id="poll-interval" type="number" min="0.3" max="3" step="0.1" value="${st?.settings?.poll_interval ?? 1}" style="width:100px"></label>
-        <span class="muted">${this.t("poll_help")}</span>
-        <h3 style="margin:18px 0 6px;font-size:15px;font-weight:500">${this.t("maintenance")}</h3>
-        <label class="chk"><input type="checkbox" id="mt-nightly" ${st?.settings?.maintenance?.nightly_restart !== false ? "checked" : ""}>${this.t("nightly_restart")}</label>
-        <label class="chk" style="margin-top:6px"><input type="checkbox" id="mt-slow" ${st?.settings?.maintenance?.slow_restart !== false ? "checked" : ""}>${this.t("slow_restart")}</label>
-        <div class="muted" style="margin-top:8px">${this.t("response_time")} : ${st?.response_time != null ? Number(st.response_time).toFixed(3) + " s" : this.t("not_measured")}
-          ${st?.last_restart ? ` · ${this.t("last_restart", { t: esc(this.fmtTime(st.last_restart.time)), r: esc(this.t("restart_" + st.last_restart.reason)) })}` : ""}</div>
-        <div class="row" style="margin-top:8px"><button class="btn sm" data-act="measure-response">${this.t("measure_now")}</button>
-          <button class="btn sm danger" data-act="device-restart">${this.t("restart_device")}</button></div>
-        <div class="actions" style="margin-top:12px"><button class="btn primary" data-act="settings-save">${this.t("save")}</button></div></section></div>
+</div>
       </div></main>`;
   }
 
