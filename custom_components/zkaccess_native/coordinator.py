@@ -109,7 +109,7 @@ class ZKCoordinator(DataUpdateCoordinator[ZKData]):
         self._identify_cache: Optional[tuple[int, dict[int, Any], int]] = None
         #: median response time of the device (s), measured every hour
         self.response_time: Optional[float] = None
-        self._last_auto_restart = 0.0
+        self._last_auto_restart: Optional[float] = None  # monotonic time of the last automatic reboot
         self._unsub_hourly: Optional[Callable[[], None]] = None
         #: restore running in the background after a finger was identified
         self._restore_task: Optional[asyncio.Task] = None
@@ -741,7 +741,8 @@ class ZKCoordinator(DataUpdateCoordinator[ZKData]):
         self.response_time = round(value, 3)
         self.async_update_listeners()
         if (value > SLOW_THRESHOLD_SECONDS and self.maintenance.get("slow_restart", True)
-                and time.monotonic() - self._last_auto_restart > SLOW_RESTART_COOLDOWN_SECONDS):
+                and (self._last_auto_restart is None
+                     or time.monotonic() - self._last_auto_restart > SLOW_RESTART_COOLDOWN_SECONDS)):
             _LOGGER.warning("%s answers in %.2f s (over %.1f s): rebooting it",
                             self.client.host, value, SLOW_THRESHOLD_SECONDS)
             self._last_auto_restart = time.monotonic()

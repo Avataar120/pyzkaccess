@@ -171,6 +171,9 @@ async def test_restart_and_response_time(hass: HomeAssistant, emulator, entry, m
     assert coord.store.data["last_restart"]["reason"] == "button"
     assert not coord.client.connected                               # waits for the device to boot
 
+    # Monotonic clock just after boot (CI runners, a freshly started host): the cool-down must
+    # not block the first automatic reboot.
+    monkeypatch.setattr("custom_components.zkaccess_native.coordinator.time.monotonic", lambda: 60.0)
     # Hourly check: fast device -> measured, no reboot.
     n = len(emulator.state.controls)
     assert await coord.async_check_response_time() is not None
@@ -183,7 +186,7 @@ async def test_restart_and_response_time(hass: HomeAssistant, emulator, entry, m
     await coord.async_check_response_time()
     assert len(emulator.state.controls) == n + 1
     # Option off -> no reboot even when slow.
-    coord._last_auto_restart = 0
+    coord._last_auto_restart = None
     coord.maintenance["slow_restart"] = False
     await coord.async_check_response_time()
     assert len(emulator.state.controls) == n + 1
