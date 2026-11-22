@@ -259,6 +259,13 @@ refusal, while the integration reports an `action` and automations run normally.
 whether a finger, card or code was used); the integration deduces it from the UserID's
 credentials.
 
+**Internal slot (`UID`) on user writes [verified on the MA500]**: a `user` record rewritten
+(`07`) without its `UID` is moved to the lowest free slot (its own counting as free); with its
+own `UID` it keeps it; a new user gets the lowest free slot. `templatev10` rows are not moved:
+they stay bound to the old `UID`, so the finger fails, or matches whichever user gets that slot
+next (seen: a fingerprint recognized as another person). Always rewrite an existing user with
+its `UID`, and rebind its templates if the slot changed.
+
 The `transaction` table keeps every event (tens of thousands of rows). A filtered read
 (`08` with a condition) on it can take more than 5 seconds, during which the device answers
 no other session **[verified]**: avoid it while another program is polling the device. The full list from the PullSDK
