@@ -64,7 +64,7 @@ manage *should* work.
 
 | Device | Status |
 |---|---|
-| **MA500** (fingerprint + RFID reader), firmware 6.64 | ✅ tested, used daily (fingerprints, cards, codes, phones) |
+| **MA500** (fingerprint + RFID reader), firmware 6.64 | ✅ tested, used daily (fingerprints, cards, codes, phones, reboot) |
 | C3-100 / C3-200 / C3-400 (access control panels) | 🟡 expected to work (same protocol, cards and codes; C3 panels have no fingerprint); please report |
 | inBio 160 / 260 / 460 (access control panels with fingerprint readers) | 🟡 expected to work; please report |
 | **Time attendance terminals and standalone units** using the "attendance" protocol (`pyzk`): MA300, SCR100, F18, F22, K40, iClock, uFace, SpeedFace... | ❌ not supported: different protocol |

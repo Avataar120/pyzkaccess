@@ -80,7 +80,7 @@ The device echoes them back in its reply.
 | `02` | disconnect | none | **[verified]** |
 | `03` | set parameters | text `Name=value,Name2=value2` | **[verified]** |
 | `04` | get parameters | text `Name1,Name2`; unknown names are omitted from the answer | **[verified]** |
-| `05` | control (doors, aux outputs, alarm, reboot) | 5 bytes, see §8 | **[verified]** (output, cancel alarm) |
+| `05` | control (doors, aux outputs, alarm, reboot) | 5 bytes, see §8 | **[verified]** (output, cancel alarm, reboot) |
 | `06` | table layout | none; answer = one text line per table | **[verified]** |
 | `07` | write records (`SetDeviceData`) | §5.3 | **[verified]** |
 | `08` | read records (`GetDeviceData`) | §5.2 | **[verified]** |
@@ -282,7 +282,13 @@ Verified on the reference device:
 | open door 1 for 1 s | `01 01 01 01 00` | event **8** (remote opening), UserID 0, door 1, verify mode 200, in/out 2 |
 | cancel alarm | `02 00 00 00 00` | event **7** (cancel alarm), UserID 0, door 0, verify mode 200 |
 
-Reboot and the normal-open state were not tested.
+Reboot (operation 3) **[verified]** on the MA500: accepted, the device is back on port 4370
+after about 23 s, data and lock untouched. The normal-open state was not tested.
+
+Observed on the MA500 after a busy day (many writes, several lock-ups and power cycles): every
+request took about **0.5 s** instead of 0.03-0.06 s, whatever the command, the network or the
+number of sessions. A reboot (operation 3) brought it back to normal. If a device becomes slow,
+try `zkaccess restart` (or the integration's reboot) first.
 
 ## 9. Parameters and clock
 
