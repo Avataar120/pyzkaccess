@@ -1165,4 +1165,4 @@ class ZkAccessPanel extends HTMLElement {
   }
 }
 
-customElements.define("zkaccess-native-panel", ZkAccessPanel);
+if (!customElements.get("zkaccess-native-panel")) customElements.define("zkaccess-native-panel", ZkAccessPanel);
