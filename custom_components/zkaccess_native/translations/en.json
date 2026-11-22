@@ -57,6 +57,9 @@
       },
       "alarm": {
         "name": "Door {door} alarm"
+      },
+      "connected": {
+        "name": "Connected"
       }
     },
     "sensor": {
@@ -71,6 +74,9 @@
       },
       "last_person": {
         "name": "Last person"
+      },
+      "clock_offset": {
+        "name": "Clock offset"
       }
     },
     "button": {

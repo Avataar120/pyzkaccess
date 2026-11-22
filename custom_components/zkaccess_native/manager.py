@@ -120,6 +120,8 @@ class AccessManager:
                                          "type": cat["type"] if cat else None})
         for num, person in persons.items():
             meta = self.store.data["persons"].get(str(num), {})
+            person["phones"] = [{"device_id": dev, **{k: v for k, v in ph.items() if k != "person"}}
+                                for dev, ph in self.store.data["phones"].items() if ph["person"] == num]
             person["enabled"] = not self.store.is_disabled(num)
             person["ha_person"] = meta.get("ha_person")
             person["categories"].sort(key=lambda c: c["digit"])
@@ -194,6 +196,32 @@ class AccessManager:
             self._forget_fingers(uid)
         self.store.data["persons"].pop(str(person), None)
         self.store.data["disabled"].pop(str(person), None)
+        for device_id in [d for d, p in self.store.data["phones"].items() if p["person"] == person]:
+            del self.store.data["phones"][device_id]
+        self.store.save()
+
+    # ------------------------------------------------------------------ phones
+    def phone_update(self, device_id: str, digit: int | None = None, enabled: bool | None = None,
+                     name: str | None = None) -> None:
+        phone = self.store.data["phones"].get(device_id)
+        if phone is None:
+            raise SafetyError("unknown phone")
+        if digit is not None:
+            if self.store.category(digit) is None:
+                raise SafetyError(f"category {digit} is not configured")
+            phone["digit"] = int(digit)
+        if enabled is not None:
+            phone["enabled"] = bool(enabled)
+        if name:
+            phone["name"] = name.strip()[:40]
+        self.store.save()
+
+    def phone_remove(self, device_id: str) -> None:
+        self.store.data["phones"].pop(device_id, None)
+        self.store.save()
+
+    def tags_save(self, tags: dict[str, dict[str, Any]]) -> None:
+        self.store.data["tags"] = {str(t): {"door": int(v.get("door", 1))} for t, v in tags.items()}
         self.store.save()
 
     def person_enable(self, person: int, enabled: bool) -> None:
@@ -321,12 +349,22 @@ class AccessManager:
                 raise SafetyError(f"unknown category type {ctype}")
             name = (cat.get("name") or ctype.capitalize()).strip()[:32]
             second = cat.get("second")
-            clean[str(digit)] = {"type": ctype, "name": name, "relay": bool(cat.get("relay")),
-                                 "second": None if second in (None, "") else int(second)}
+            entry = {"type": ctype, "name": name, "relay": bool(cat.get("relay")),
+                     "second": None if second in (None, "") else int(second)}
+            if ctype == "toggle":
+                if not cat.get("entity_id"):
+                    raise SafetyError(f"toggle category {digit} needs an entity")
+                entry.update(entity_id=str(cat["entity_id"]), on=int(cat["on"]), off=int(cat["off"]))
+            clean[str(digit)] = entry
         clean.setdefault("0", {"type": "open", "name": "Open", "relay": True, "second": None})
         for digit, cat in clean.items():
             if cat["second"] is not None and str(cat["second"]) not in clean:
                 raise SafetyError(f"second presentation of {digit} points to an unknown category")
+            if cat["type"] == "toggle":
+                for key in ("on", "off"):
+                    target = clean.get(str(cat[key]))
+                    if target is None or target["type"] == "toggle":
+                        raise SafetyError(f"toggle category {digit}: '{key}' must be a non-toggle category")
         old = self.store.categories
         self.store.data["categories"] = clean
         if second_window is not None:
@@ -367,7 +405,7 @@ class AccessManager:
     def _integration_state(self) -> dict[str, Any]:
         d = self.store.data
         return {k: d[k] for k in ("numbering", "second_window", "categories", "persons",
-                                  "disabled", "fingers")}
+                                  "disabled", "fingers", "tags", "phones")}
 
     def backup_create(self, reason: str) -> str:
         snap = zk_backup.backup(self.client)
@@ -414,7 +452,7 @@ class AccessManager:
         state = snap.get("integration")
         if state:
             for key, value in state.items():
-                if mode == "replace" or key not in ("persons", "fingers", "disabled"):
+                if mode == "replace" or key not in ("persons", "fingers", "disabled", "tags", "phones"):
                     self.store.data[key] = value
                 else:
                     self.store.data[key].update(value)

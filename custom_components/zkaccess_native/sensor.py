@@ -1,8 +1,8 @@
 """Counters and last access sensors."""
 from __future__ import annotations
 
-from homeassistant.components.sensor import SensorEntity, SensorStateClass
-from homeassistant.const import EntityCategory
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
+from homeassistant.const import EntityCategory, UnitOfTime
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -15,7 +15,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ZKConfigEntry,
                             add: AddEntitiesCallback) -> None:
     coord = entry.runtime_data
     add([ZKCount(coord, "persons"), ZKCount(coord, "fingerprints"), ZKCount(coord, "cards"),
-         ZKLastPerson(coord)])
+         ZKLastPerson(coord), ZKClockOffset(coord)])
 
 
 class ZKCount(ZKEntity, SensorEntity):
@@ -53,3 +53,20 @@ class ZKLastPerson(ZKEntity, SensorEntity):
             self._attr_extra_state_attributes = {
                 k: last[k] for k in ("person", "user_id", "category", "method", "gesture", "door", "time")}
         super()._handle_coordinator_update()
+
+
+class ZKClockOffset(ZKEntity, SensorEntity):
+    """Device clock minus Home Assistant clock, measured before each sync (connection, nightly)."""
+
+    _attr_translation_key = "clock_offset"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_device_class = SensorDeviceClass.DURATION
+    _attr_native_unit_of_measurement = UnitOfTime.SECONDS
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    def __init__(self, coordinator) -> None:
+        super().__init__(coordinator, "clock_offset")
+
+    @property
+    def native_value(self) -> float | None:
+        return self.coordinator.clock_offset

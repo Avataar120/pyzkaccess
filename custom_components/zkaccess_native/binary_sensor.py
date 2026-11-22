@@ -14,7 +14,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ZKConfigEntry,
                             add: AddEntitiesCallback) -> None:
     coord = entry.runtime_data
     doors = (coord.info.lock_count if coord.info else None) or 1
-    entities = []
+    entities: list = [ZKConnected(coord)]
     for door in range(1, doors + 1):
         entities += [ZKDoorSensor(coord, door), ZKAlarm(coord, door)]
     add(entities)
@@ -53,3 +53,22 @@ class ZKAlarm(ZKEntity, BinarySensorEntity):
         if status is None:
             return None
         return status.alarm(self.door) or status.open_timeout(self.door)
+
+
+class ZKConnected(ZKEntity, BinarySensorEntity):
+    """Is the device reachable? Stays available when the device is not, so it can be alerted on."""
+
+    _attr_device_class = BinarySensorDeviceClass.CONNECTIVITY
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_translation_key = "connected"
+
+    def __init__(self, coordinator) -> None:
+        super().__init__(coordinator, "connected")
+
+    @property
+    def available(self) -> bool:
+        return True
+
+    @property
+    def is_on(self) -> bool:
+        return self.coordinator.last_update_success

@@ -11,7 +11,7 @@ const DOMAIN = "zkaccess_native";
 // Physical fingers, ZKTeco order: 0 = left little ... 4 = left thumb, 5 = right thumb ... 9 = right little.
 const FINGER_KEYS = ["little", "ring", "middle", "index", "thumb", "thumb", "index", "middle", "ring", "little"];
 const FINGER_HEIGHT = { little: 70, ring: 92, middle: 102, index: 94, thumb: 62 };
-const CATEGORY_TYPES = ["open", "close", "lock", "unlock", "arm", "disarm", "custom"];
+const CATEGORY_TYPES = ["open", "close", "lock", "unlock", "arm", "disarm", "custom", "toggle"];
 const PALETTE = ["#0f766e", "#1e40af", "#b45309", "#7c3aed", "#be185d", "#0369a1", "#4d7c0f", "#a16207", "#475569", "#9f1239"];
 
 const I18N = {
@@ -87,6 +87,16 @@ const I18N = {
     general: "General", notify_keypad: "Notify when a user is added on the keypad",
     saved: "Saved", error: "Error", loading: "Loading…", no_device: "No ZKAccess device is configured.",
     reason_change: "Change detected", reason_nightly: "Nightly", reason_manual: "Manual",
+    phones: "Phones", phones_help: "A phone that scans one of the NFC tags declared in Settings acts like a badge of the chosen category.",
+    pair_phone: "Pair a phone", no_phone: "No phone", pair_title: "Pair a phone",
+    pair_wait: "Scan one of the declared NFC tags with the phone to pair (2 minutes)…", paired: "Phone paired: {n}",
+    pair_timeout: "No tag scanned within 2 minutes.", pair_no_tag: "Declare an NFC tag in Settings first.",
+    method_phone: "phone", enabled_lbl: "Enabled",
+    tags: "NFC tags (phones)", tags_help: "Home Assistant tags that act as readers: a paired phone scanning one is checked like a badge. Create tags in Settings → Tags.",
+    no_tags: "No tag in Home Assistant yet (Settings → Tags).", door_lbl: "Door",
+    type_toggle: "Toggle (by state)", toggle_entity: "Entity", toggle_on: "When active →", toggle_off: "When inactive →",
+    toggle_help: "Toggle: one presentation, Home Assistant picks the category from the state of an entity (active = on, locked, armed…).",
+    clock_offset: "Offset before the last sync: {s} s",
   },
   fr: {
     title: "Contrôle d'accès", device: "Appareil", connected: "Connecté", disconnected: "Déconnecté",
@@ -160,6 +170,16 @@ const I18N = {
     general: "Général", notify_keypad: "Notifier quand un utilisateur est ajouté au clavier",
     saved: "Enregistré", error: "Erreur", loading: "Chargement…", no_device: "Aucun appareil ZKAccess n'est configuré.",
     reason_change: "Changement détecté", reason_nightly: "Nocturne", reason_manual: "Manuelle",
+    phones: "Téléphones", phones_help: "Un téléphone qui scanne un des tags NFC déclarés dans les réglages agit comme un badge de la catégorie choisie.",
+    pair_phone: "Associer un téléphone", no_phone: "Aucun téléphone", pair_title: "Associer un téléphone",
+    pair_wait: "Scannez un des tags NFC déclarés avec le téléphone à associer (2 minutes)…", paired: "Téléphone associé : {n}",
+    pair_timeout: "Aucun tag scanné en 2 minutes.", pair_no_tag: "Déclarez d'abord un tag NFC dans les réglages.",
+    method_phone: "téléphone", enabled_lbl: "Actif",
+    tags: "Tags NFC (téléphones)", tags_help: "Tags Home Assistant qui servent de lecteurs : un téléphone associé qui en scanne un est contrôlé comme un badge. Créez les tags dans Paramètres → Tags.",
+    no_tags: "Aucun tag dans Home Assistant (Paramètres → Tags).", door_lbl: "Porte",
+    type_toggle: "Bascule (selon un état)", toggle_entity: "Entité", toggle_on: "Si active →", toggle_off: "Si inactive →",
+    toggle_help: "Bascule : un seul passage, Home Assistant choisit la catégorie selon l'état d'une entité (active = on, verrouillé, armé…).",
+    clock_offset: "Écart avant la dernière remise à l'heure : {s} s",
   },
 };
 
@@ -370,6 +390,9 @@ class ZkAccessPanel extends HTMLElement {
       if (msg.enroll && this._s.modal?.kind === "enroll") {
         this._s.modal.step = msg.enroll.state === "done" ? "done" : "timeout";
       }
+      if (msg.pair && this._s.modal?.kind === "pair") {
+        this._s.modal.step = msg.pair.state; this._s.modal.name = msg.pair.name;
+      }
       clearTimeout(this._reloadTimer);
       this._reloadTimer = setTimeout(async () => {
         try { this._s.state = await this.ws("state"); this.render(); } catch (e) { /* offline */ }
@@ -387,7 +410,7 @@ class ZkAccessPanel extends HTMLElement {
     const s = this._s, d = el.dataset;
     switch (a) {
       case "tab": s.view = d.v; s.person = null; s.finger = null;
-        if (d.v === "door") this.loadDoor(); if (d.v === "settings") this.loadBackups(); break;
+        if (d.v === "door") this.loadDoor(); if (d.v === "settings") { this.loadBackups(); this.loadTags(); } break;
       case "device": s.entryId = el.value; s.person = null; await this._loadDevice(); return;
       case "open-person": s.person = Number(d.p); s.finger = null; s.view = "people"; break;
       case "back": s.person = null; s.finger = null; break;
@@ -486,6 +509,23 @@ class ZkAccessPanel extends HTMLElement {
         await this.call("backup/restore", { name: m.name, mode }, this.t("saved")); await this.refresh(); await this.loadBackups(); return;
       }
       case "backup-import": this.shadowRoot.getElementById("import-file").click(); return;
+      case "pair-open": s.modal = { kind: "pair", person: s.person, step: "choose" }; break;
+      case "pair-start": {
+        const m = s.modal; m.digit = Number(this.val("pair-digit") || 0);
+        await this.call("phone/pair_start", { person: m.person, digit: m.digit }); m.step = "wait"; break;
+      }
+      case "pair-cancel": if (s.modal?.step === "wait") await this.ws("phone/pair_cancel").catch(() => {}); s.modal = null; await this.refresh(); return;
+      case "phone-digit": await this.call("phone/update", { device_id: d.dev, digit: Number(el.value) }); await this.refresh(); return;
+      case "phone-enabled": await this.call("phone/update", { device_id: d.dev, enabled: el.checked }); await this.refresh(); return;
+      case "phone-remove": s.modal = { kind: "confirm", text: `${this.t("remove")} ${esc(d.name)} ?`,
+        then: async () => { await this.call("phone/remove", { device_id: d.dev }); await this.refresh(); } }; break;
+      case "tags-save": {
+        const tags = {};
+        this.shadowRoot.querySelectorAll("input[data-tag]").forEach((c) => {
+          if (c.checked) tags[c.dataset.tag] = { door: Number(this.val("tag-door-" + c.dataset.idx) || 1) }; });
+        await this.call("tags/save", { tags }, this.t("saved")); await this.refresh(); return;
+      }
+      case "cat-type": this.render(); return;
       default: return;
     }
     this.render();
@@ -510,6 +550,11 @@ class ZkAccessPanel extends HTMLElement {
     this.render();
   }
 
+  async loadTags() {
+    try { this._s.haTags = await this._hass.connection.sendMessagePromise({ type: "tag/list" }); } catch (e) { this._s.haTags = []; }
+    this.render();
+  }
+
   async loadBackups() {
     try { this._s.backups = await this.ws("backup/list"); } catch (e) { this._s.backups = []; }
     this.render();
@@ -523,6 +568,8 @@ class ZkAccessPanel extends HTMLElement {
       const second = this.val(`ct-second-${d}`);
       out[String(d)] = { type, name: this.val(`ct-name-${d}`) || this.t("type_" + type), relay: this.chk(`ct-relay-${d}`),
         second: second === "" ? null : Number(second) };
+      if (type === "toggle") Object.assign(out[String(d)], { entity_id: this.val(`ct-entity-${d}`),
+        on: Number(this.val(`ct-on-${d}`) || 0), off: Number(this.val(`ct-off-${d}`) || 0) });
     }
     const numbering = this.val("numbering") || "category";
     await this.call("categories/save", { categories: out, second_window: Number(this.val("second-window") || 3), numbering }, this.t("saved"));
@@ -608,6 +655,8 @@ class ZkAccessPanel extends HTMLElement {
       this._menu.hass = this._hass; this._menu.narrow = this._narrow;
       slot.appendChild(this._menu);
     }
+    root.querySelectorAll("select[id^=ct-type-]").forEach((sel) => sel.addEventListener("change", () => {
+      const row = root.getElementById("ct-toggle-" + sel.id.slice(8)); if (row) row.hidden = sel.value !== "toggle"; }));
     const cardIn = root.getElementById("card-no");
     if (cardIn) cardIn.addEventListener("input", () => { this._s.modal.cardInput = cardIn.value; });
   }
@@ -744,6 +793,14 @@ class ZkAccessPanel extends HTMLElement {
             ${people.map((e) => `<option value="${e}" ${e === p.ha_person ? "selected" : ""}>${esc(this._hass.states[e].attributes.friendly_name || e)}</option>`).join("")}</select></label>
           <div class="actions"><button class="btn primary" data-act="save-identity">${this.t("save")}</button></div></div></section>
         <section class="card"><h2>${this.t("creds_title")}</h2><p class="sub">${this.t("creds_help")}</p><div class="list">${creds}</div></section>
+        <section class="card"><h2>${this.t("phones")}</h2><p class="sub">${this.t("phones_help")}</p><div class="list">${(p.phones || []).map((ph) => `
+          <div style="display:flex;flex-direction:column;gap:8px"><div class="row"><b style="font-weight:500;flex:1">${esc(ph.name)}</b>
+            <label class="chk"><input type="checkbox" data-act="phone-enabled" data-dev="${esc(ph.device_id)}" ${ph.enabled !== false ? "checked" : ""}>${this.t("enabled_lbl")}</label></div>
+            <div class="row">${this.plain() ? "" : `<select data-act="phone-digit" data-dev="${esc(ph.device_id)}" aria-label="${this.t("category")}">${Object.keys(cats).map((d) =>
+              `<option value="${d}" ${Number(d) === ph.digit ? "selected" : ""}>${esc(cats[d].name)}</option>`).join("")}</select>`}
+              <button class="btn sm danger" data-act="phone-remove" data-dev="${esc(ph.device_id)}" data-name="${esc(ph.name)}">${this.t("remove")}</button></div></div>`).join("")
+          || `<div class="muted">${this.t("no_phone")}</div>`}</div>
+          <div class="actions" style="justify-content:flex-start;margin-top:10px"><button class="btn" data-act="pair-open">${this.t("pair_phone")}</button></div></section>
       </div></div>
       <div class="cols"><section class="card grow" style="display:block"><h2>${this.t("recent")}</h2><div class="list">${recent.map((h) =>
         `<div class="row"><span class="muted" style="width:150px">${this.fmtTime(h.time)}</span><span style="flex:1">${esc(h.category || h.event_name)} · ${this.t("method_" + h.method)}</span>
@@ -764,7 +821,7 @@ class ZkAccessPanel extends HTMLElement {
       const [bg, fg, icon] = style[h.result] || style.other;
       const who = h.person_name || (h.user_id ? (h.person ? this.t("person_no", { n: h.person }) : this.t("unknown_user", { u: h.user_id }))
         : h.card ? this.t("unknown_card") : h.event_name);
-      const parts = [h.category, this.t("method_" + h.method), h.card && !h.person ? `#${h.card}` : null,
+      const parts = [h.category, this.t("method_" + h.method), h.phone, h.card && !h.person ? `#${h.card}` : null,
         h.gesture === "double" ? this.t("second_presentation") : null,
         (h.result === "denied" || h.result === "other") && h.event_name !== who ? h.event_name : null].filter(Boolean);
       const canAssign = h.card && !h.person && h.result === "denied";
@@ -806,6 +863,7 @@ class ZkAccessPanel extends HTMLElement {
         : `<p class="muted">${this.t("loading")}</p>`}</section></div>
       <div class="side">
         <section class="card"><h2>${this.t("clock")}</h2><div style="font-size:24px;font-weight:500">${door?.device_time ? this.fmtTime(door.device_time) : "—"}</div>
+          ${st?.clock_offset != null ? `<div class="muted">${this.t("clock_offset", { s: st.clock_offset })}</div>` : ""}
           <div class="actions" style="justify-content:flex-start;margin-top:12px"><button class="btn" data-act="clock-sync">${this.t("sync_now")}</button></div></section>
         <section class="card"><h2>${this.t("device_info")}</h2><div class="list">
           <div class="row"><span class="muted" style="width:110px">${this.t("model")}</span>${esc(st?.device?.machine_type ?? "—")}</div>
@@ -829,17 +887,24 @@ class ZkAccessPanel extends HTMLElement {
           `<option value="${x}" ${c?.type === x ? "selected" : ""}>${this.t("type_" + x)}</option>`).join("")}</select>`;
       const secondSel = `<select id="ct-second-${d}" aria-label="${this.t("second_pres")} ${d}"><option value="">${this.t("none")}</option>${Object.keys(cats).filter((x) => x !== String(d)).map((x) =>
         `<option value="${x}" ${c?.second === Number(x) ? "selected" : ""}>${esc(cats[x].name)}</option>`).join("")}</select>`;
+      const others = Object.keys(cats).filter((x) => x !== String(d) && cats[x].type !== "toggle");
+      const tsel = (key) => `<select id="ct-${key}-${d}" aria-label="${this.t("toggle_" + key)} ${d}">${others.map((x) =>
+        `<option value="${x}" ${c?.[key] === Number(x) ? "selected" : ""}>${esc(cats[x].name)}</option>`).join("")}</select>`;
+      const toggleRow = d === 0 ? "" : `<tr id="ct-toggle-${d}" ${c?.type === "toggle" ? "" : "hidden"}><td></td><td colspan="5"><div class="row">
+        <label class="row muted">${this.t("toggle_entity")}<input id="ct-entity-${d}" list="zk-entities" value="${esc(c?.entity_id || "")}" style="width:240px"></label>
+        <label class="row muted">${this.t("toggle_on")}${tsel("on")}</label><label class="row muted">${this.t("toggle_off")}${tsel("off")}</label></div></td></tr>`;
       rows.push(`<tr><td class="mono" style="font-weight:700;font-size:16px">${d}</td><td>${typeSel}</td>
         <td><input id="ct-name-${d}" value="${esc(c?.name || "")}" maxlength="32" style="width:150px" aria-label="${this.t("display_name")} ${d}"></td>
         <td><input type="checkbox" id="ct-relay-${d}" ${c?.relay ? "checked" : ""} aria-label="${this.t("relay")} ${d}"></td>
-        <td>${secondSel}</td><td class="muted">${esc((users[d] || []).slice(0, 4).join(", "))}</td></tr>`);
+        <td>${secondSel}</td><td class="muted">${esc((users[d] || []).slice(0, 4).join(", "))}</td></tr>${toggleRow}`);
     }
     const backups = this._s.backups.map((b) => `<div class="row"><div style="flex:1 1 240px"><b style="font-weight:500">${this.fmtTime(b.created)}</b>
       <div class="muted">${esc(b.reason)} · ${b.users} UserID · ${b.fingerprints} ${this.t("fingerprints")}</div></div>
       <button class="btn" data-act="backup-download" data-n="${esc(b.name)}">${this.t("download")}</button>
       <button class="btn" data-act="backup-restore" data-n="${esc(b.name)}">${this.t("restore")}</button></div>`).join("");
     return `<main><div class="cols"><div class="grow">
-      <section class="card tablewrap"><h2>${this.t("action_categories")}</h2><p class="sub">${this.t("categories_help")}</p><p class="sub">${this.t("second_help")}</p>
+      <section class="card tablewrap"><h2>${this.t("action_categories")}</h2><p class="sub">${this.t("categories_help")}</p><p class="sub">${this.t("second_help")}</p><p class="sub">${this.t("toggle_help")}</p>
+        <datalist id="zk-entities">${Object.keys(this._hass.states).filter((e) => /^(alarm_control_panel|lock|input_boolean|switch|cover|binary_sensor)\./.test(e)).sort().map((e) => `<option value="${e}">`).join("")}</datalist>
         <div class="row" style="margin-bottom:12px"><label class="field" style="flex:1 1 320px">${this.t("numbering")}<select id="numbering">
           <option value="category" ${!this.plain() ? "selected" : ""}>${this.t("numbering_category")}</option>
           <option value="plain" ${this.plain() ? "selected" : ""}>${this.t("numbering_plain")}</option></select></label>
@@ -854,7 +919,14 @@ class ZkAccessPanel extends HTMLElement {
           <button class="btn primary" style="margin-left:auto" data-act="backup-now">${this.t("backup_now")}</button></div>
         <div class="list">${backups}</div>
         <div class="actions" style="justify-content:flex-start;margin-top:10px"><button class="btn" data-act="backup-import">${this.t("import_file")}</button></div></section></div>
-      <div class="side"><section class="card"><h2>${this.t("general")}</h2>
+      <div class="side"><section class="card"><h2>${this.t("tags")}</h2><p class="sub">${this.t("tags_help")}</p>
+        ${(this._s.haTags || []).length ? `<div class="list">${this._s.haTags.map((tg, i) => {
+          const conf = (st?.tags || {})[tg.id];
+          return `<div class="row"><label class="chk" style="flex:1"><input type="checkbox" data-tag="${esc(tg.id)}" data-idx="${i}" ${conf ? "checked" : ""}>${esc(tg.name || tg.id)}</label>
+            <label class="row muted">${this.t("door_lbl")}<input id="tag-door-${i}" type="number" min="1" max="4" value="${conf?.door ?? 1}" style="width:64px"></label></div>`; }).join("")}</div>
+          <div class="actions" style="margin-top:10px"><button class="btn primary" data-act="tags-save">${this.t("save")}</button></div>`
+          : `<p class="muted">${this.t("no_tags")}</p>`}</section>
+        <section class="card"><h2>${this.t("general")}</h2>
         <label class="chk"><input type="checkbox" id="notify-keypad" ${st?.settings?.notify_keypad !== false ? "checked" : ""}>${this.t("notify_keypad")}</label>
         <div class="actions" style="margin-top:12px"><button class="btn primary" data-act="settings-save">${this.t("save")}</button></div></section></div>
       </div></main>`;
@@ -915,6 +987,17 @@ class ZkAccessPanel extends HTMLElement {
         <label class="field">${this.t("new_number")}<input id="as-new" type="number" min="1" max="99"></label>
         ${this.plain() ? "" : `<label class="field">${this.t("category")}<select id="as-digit">${Object.keys(cats).map((d) => `<option value="${d}">${esc(cats[d].name)}</option>`).join("")}</select></label>`}
         <div class="actions"><button class="btn" data-act="close-modal">${this.t("cancel")}</button><button class="btn primary" data-act="assign-save">${this.t("save")}</button></div>`;
+    } else if (m.kind === "pair") {
+      const hasTags = Object.keys(this._s.state?.tags || {}).length > 0;
+      inner = `<h2>${this.t("pair_title")}</h2>`;
+      if (!hasTags) inner += `<p>${this.t("pair_no_tag")}</p><div class="actions"><button class="btn" data-act="close-modal">${this.t("close")}</button></div>`;
+      else if (m.step === "choose") inner += `${this.plain() ? `<input type="hidden" id="pair-digit" value="0">` : `<label class="field">${this.t("category")}<select id="pair-digit">${Object.keys(cats).map((d) =>
+          `<option value="${d}">${esc(cats[d].name)}</option>`).join("")}</select></label>`}
+        <div class="actions"><button class="btn" data-act="close-modal">${this.t("cancel")}</button><button class="btn primary" data-act="pair-start">${this.t("start")}</button></div>`;
+      else inner += `${m.step === "wait" ? `<div class="row"><span class="spin"></span>${this.t("pair_wait")}</div>`
+          : m.step === "done" ? `<div class="row" style="color:#067647;font-weight:500">✓ ${this.t("paired", { n: esc(m.name || "") })}</div>`
+          : `<div class="row" style="color:#b42318">${this.t("pair_timeout")}</div>`}
+        <div class="actions"><button class="btn ${m.step === "done" ? "primary" : ""}" data-act="pair-cancel">${m.step === "done" ? this.t("done") : this.t("cancel")}</button></div>`;
     } else if (m.kind === "restore") {
       inner = `<h2>${this.t("restore_title", { name: esc(m.name) })}</h2>
         <label class="chk"><input type="radio" name="mode" value="merge" checked>${this.t("merge")}</label>

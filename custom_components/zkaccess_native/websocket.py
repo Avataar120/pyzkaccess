@@ -46,6 +46,9 @@ def _state(coord: ZKCoordinator) -> dict[str, Any]:
         "settings": {"backup": coord.store.data["backup"],
                      "notify_keypad": coord.store.data.get("notify_keypad", True)},
         "enrollment": coord.enrollment,
+        "tags": coord.store.data["tags"],
+        "phone_pairing": coord.phone_pairing and {k: v for k, v in coord.phone_pairing.items() if k != "until"},
+        "clock_offset": coord.clock_offset,
     }
 
 
@@ -217,6 +220,73 @@ def ws_enroll_cancel(hass, connection, msg) -> None:
     _reply(connection, msg)
 
 
+# ---------------------------------------------------------------------- phones
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/phone/pair_start", ENTRY: str,
+                                  vol.Required("person"): int, vol.Required("digit"): vol.All(int, vol.Range(0, 9))})
+@websocket_api.require_admin
+@callback
+def ws_phone_pair_start(hass, connection, msg) -> None:
+    coord = _coordinator(hass, msg["entry_id"])
+    if not coord.store.data["tags"]:
+        connection.send_error(msg["id"], "no_tag", "declare at least one NFC tag in Settings first")
+        return
+    if coord.store.category(msg["digit"]) is None:
+        connection.send_error(msg["id"], "failed", f"category {msg['digit']} is not configured")
+        return
+    pairing = coord.start_phone_pairing(msg["person"], msg["digit"])
+    _reply(connection, msg, {"state": pairing["state"]})
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/phone/pair_cancel", ENTRY: str})
+@websocket_api.require_admin
+@callback
+def ws_phone_pair_cancel(hass, connection, msg) -> None:
+    _coordinator(hass, msg["entry_id"]).phone_pairing = None
+    _reply(connection, msg)
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/phone/update", ENTRY: str,
+                                  vol.Required("device_id"): str,
+                                  vol.Optional("digit"): vol.All(int, vol.Range(0, 9)),
+                                  vol.Optional("enabled"): bool, vol.Optional("name"): str})
+@websocket_api.require_admin
+@websocket_api.async_response
+async def ws_phone_update(hass, connection, msg) -> None:
+    coord = _coordinator(hass, msg["entry_id"])
+
+    async def run():
+        coord.manager.phone_update(msg["device_id"], msg.get("digit"), msg.get("enabled"), msg.get("name"))
+        await coord.async_refresh_snapshot(silent=True)
+    await _guard(connection, msg, run())
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/phone/remove", ENTRY: str,
+                                  vol.Required("device_id"): str})
+@websocket_api.require_admin
+@websocket_api.async_response
+async def ws_phone_remove(hass, connection, msg) -> None:
+    coord = _coordinator(hass, msg["entry_id"])
+
+    async def run():
+        coord.manager.phone_remove(msg["device_id"])
+        await coord.async_refresh_snapshot(silent=True)
+    await _guard(connection, msg, run())
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/tags/save", ENTRY: str,
+                                  vol.Required("tags"): dict})
+@websocket_api.require_admin
+@callback
+def ws_tags_save(hass, connection, msg) -> None:
+    coord = _coordinator(hass, msg["entry_id"])
+    try:
+        coord.manager.tags_save(msg["tags"])
+    except (ValueError, TypeError) as ex:
+        connection.send_error(msg["id"], "failed", str(ex))
+        return
+    _reply(connection, msg)
+
+
 # ------------------------------------------------------------------ unassigned
 @websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/unassigned/assign", ENTRY: str,
                                   vol.Required("user_id"): int, vol.Required("person"): int,
@@ -368,7 +438,8 @@ def ws_settings_save(hass, connection, msg) -> None:
 
 COMMANDS = [ws_devices, ws_state, ws_history, ws_subscribe, ws_person_save, ws_person_delete,
             ws_person_enable, ws_credential_set, ws_finger_delete, ws_finger_update, ws_enroll_start,
-            ws_enroll_cancel, ws_unassigned_assign, ws_user_delete, ws_categories_save, ws_door_get,
+            ws_enroll_cancel, ws_phone_pair_start, ws_phone_pair_cancel, ws_phone_update, ws_phone_remove,
+            ws_tags_save, ws_unassigned_assign, ws_user_delete, ws_categories_save, ws_door_get,
             ws_door_set, ws_door_control, ws_clock_sync, ws_backup_list, ws_backup_create,
             ws_backup_download, ws_backup_restore, ws_backup_import, ws_settings_save]
 

@@ -33,9 +33,14 @@ NUMBERING_CATEGORY = "category"  # UserID = person number + category digit
 NUMBERING_PLAIN = "plain"        # one UserID per person, no categories
 
 # Category types (the digit 0 is always "open").
-CATEGORY_TYPES = ("open", "close", "lock", "unlock", "arm", "disarm", "custom")
+CATEGORY_TYPES = ("open", "close", "lock", "unlock", "arm", "disarm", "custom", "toggle")
+#: Entity states that count as "inactive" for a toggle category (anything else is "active").
+TOGGLE_INACTIVE_STATES = ("off", "unlocked", "disarmed", "closed", "not_home", "idle", "unavailable", "unknown")
 DEFAULT_CATEGORIES = {"0": {"type": "open", "name": "Open", "relay": True, "second": None}}
 DEFAULT_SECOND_WINDOW = 3.0
+
+#: How long a phone pairing waits for a tag scan (seconds).
+PHONE_PAIR_TIMEOUT_SECONDS = 120
 
 PANEL_URL = "zkaccess-native"
 STATIC_URL = f"/{DOMAIN}_static"

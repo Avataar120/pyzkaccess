@@ -11,19 +11,21 @@ from typing import Any, Awaitable, Callable, Optional, TypeVar
 from homeassistant.components import persistent_notification
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_PORT
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.event import async_call_later, async_track_time_change
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
+from datetime import datetime
 from pyzkaccess_native import (AccessEvent, DeviceInfo, DoorStatus, RepeatDetector, ZKAccess,
                                ZKError)
 from pyzkaccess_native.events import DENIED_EVENTS, GRANTED_EVENTS
 
-from .const import (CONF_POLL_INTERVAL, CONF_SYNC_CLOCK, DEFAULT_POLL_INTERVAL,
-                    DEFAULT_SYNC_CLOCK, DOMAIN, ENROLL_TIMEOUT_SECONDS, EVENT_ACCESS, PANEL_URL,
+from .const import (CONF_OPEN_SECONDS, CONF_POLL_INTERVAL, CONF_SYNC_CLOCK, DEFAULT_OPEN_SECONDS,
+                    DEFAULT_POLL_INTERVAL, DEFAULT_SYNC_CLOCK, DOMAIN, ENROLL_TIMEOUT_SECONDS,
+                    EVENT_ACCESS, PANEL_URL, PHONE_PAIR_TIMEOUT_SECONDS, TOGGLE_INACTIVE_STATES,
                     RESULT_ACTION, RESULT_DENIED, RESULT_GRANTED, RESULT_OTHER,
                     SNAPSHOT_REFRESH_SECONDS)
 from .manager import AccessManager
@@ -91,13 +93,26 @@ class ZKCoordinator(DataUpdateCoordinator[ZKData]):
         self.enrollment: Optional[dict[str, Any]] = None
         self._unsub_nightly: Optional[Callable[[], None]] = None
         self._unsub_backup: Optional[Callable[[], None]] = None
+        self._unsub_tags: Optional[Callable[[], None]] = None
+        self.phone_pairing: Optional[dict[str, Any]] = None
+        #: device clock minus Home Assistant clock (seconds), measured before each sync
+        self.clock_offset: Optional[float] = None
 
     # ------------------------------------------------------------ executor side
     def _connect(self) -> None:
         self.client.connect()
         self.info = self.client.info()
+        self._measure_clock()
         if self.config_entry.options.get(CONF_SYNC_CLOCK, DEFAULT_SYNC_CLOCK):
             self.client.set_time()
+
+    def _measure_clock(self) -> None:
+        try:
+            device_now = self.client.get_time()
+        except ZKError:
+            return
+        if device_now:
+            self.clock_offset = round((device_now - datetime.now()).total_seconds())
 
     def _poll(self) -> tuple[list[Any], Optional[dict[str, Any]], Optional[int]]:
         if not self.client.connected:
@@ -124,12 +139,10 @@ class ZKCoordinator(DataUpdateCoordinator[ZKData]):
         if self.enrollment:
             self._update_enrollment(enrolled)
         events = [self._enrich(r) for r in records if isinstance(r, AccessEvent)]
-        for ev in events:
-            self.hass.bus.async_fire(EVENT_ACCESS, ev)
-            self.store.add_history(ev)
-            async_dispatcher_send(self.hass, signal_event(self.config_entry.entry_id), ev)
-        if events:
-            self.store.save(delay=10)
+        self._publish(events)
+        if self.phone_pairing and time.monotonic() > self.phone_pairing["until"]:
+            self.phone_pairing = None
+            async_dispatcher_send(self.hass, signal_changed(self.config_entry.entry_id), {"pair": {"state": "timeout"}})
         status = next((r for r in reversed(records) if isinstance(r, DoorStatus)), None)
         return ZKData(status=status or (self.data.status if self.data else None),
                       events=events, snapshot=self.snapshot)
@@ -218,14 +231,38 @@ class ZKCoordinator(DataUpdateCoordinator[ZKData]):
             result = RESULT_OTHER
         if disabled and result in (RESULT_GRANTED, RESULT_ACTION):
             result = RESULT_DENIED
+        digit, cat, gesture, toggled = self._resolve(digit, cat, result, ("user", ev.user_id) if ev.user_id else None)
+        if gesture == "double":
+            result = RESULT_ACTION
+        return self._event(result=result, code=code, event_name=ev.label, user_id=ev.user_id, who=who,
+                           digit=digit, cat=cat, gesture=gesture, toggled=toggled,
+                           method=access_method(ev), card=ev.card or None, door=ev.door,
+                           verify_mode=int(ev.verify_mode),
+                           when=ev.time.isoformat() if ev.time else None)
+
+    def _resolve(self, digit: Optional[int], cat: Optional[dict[str, Any]], result: str,
+                 repeat_key: Any) -> tuple[Optional[int], Optional[dict[str, Any]], str, bool]:
+        """Second presentation, then toggle: the category that finally applies."""
         gesture = "single"
-        if result in (RESULT_GRANTED, RESULT_ACTION) and ev.user_id:
+        if result in (RESULT_GRANTED, RESULT_ACTION) and repeat_key is not None:
             self._repeat.window = float(self.store.data.get("second_window", 3.0))
-            if self._repeat.check(ev.user_id) and cat and cat.get("second") is not None:
+            if self._repeat.check(repeat_key) and cat and cat.get("second") is not None:
                 digit = int(cat["second"])
                 cat = self.store.category(digit)
                 gesture = "double"
-                result = RESULT_ACTION
+        toggled = False
+        if cat and cat.get("type") == "toggle" and result in (RESULT_GRANTED, RESULT_ACTION):
+            state = self.hass.states.get(cat.get("entity_id", ""))
+            active = state is not None and state.state not in TOGGLE_INACTIVE_STATES
+            digit = int(cat["on"] if active else cat["off"])
+            cat = self.store.category(digit)
+            toggled = True
+        return digit, cat, gesture, toggled
+
+    def _event(self, *, result: str, code: Optional[int], event_name: str, user_id: Optional[int],
+               who: Optional[dict[str, Any]], digit: Optional[int], cat: Optional[dict[str, Any]],
+               gesture: str, toggled: bool, method: str, card: Optional[int], door: int,
+               verify_mode: Optional[int], when: Optional[str], phone: Optional[str] = None) -> dict[str, Any]:
         device = dr.async_get(self.hass).async_get_device({(DOMAIN, self.config_entry.unique_id)})
         return {
             "device_id": device.id if device else None,
@@ -233,8 +270,8 @@ class ZKCoordinator(DataUpdateCoordinator[ZKData]):
             "granted": result == RESULT_GRANTED,
             "denied": result == RESULT_DENIED,
             "event": code,
-            "event_name": ev.label,
-            "user_id": ev.user_id,
+            "event_name": event_name,
+            "user_id": user_id,
             "person": who["person"] if who else None,
             "person_name": (who["person_name"] or None) if who else None,
             "ha_person": who["ha_person"] if who else None,
@@ -242,12 +279,83 @@ class ZKCoordinator(DataUpdateCoordinator[ZKData]):
             "category_digit": digit,
             "category_type": cat["type"] if cat else None,
             "gesture": gesture,
-            "method": access_method(ev),
-            "card": ev.card or None,
-            "door": ev.door,
-            "verify_mode": int(ev.verify_mode),
-            "time": ev.time.isoformat() if ev.time else dt_util.now().isoformat(),
+            "toggle": toggled,
+            "method": method,
+            "card": card,
+            "phone": phone,
+            "door": door,
+            "verify_mode": verify_mode,
+            "time": when or dt_util.now().isoformat(),
         }
+
+    @callback
+    def _publish(self, events: list[dict[str, Any]]) -> None:
+        for ev in events:
+            self.hass.bus.async_fire(EVENT_ACCESS, ev)
+            self.store.add_history(ev)
+            async_dispatcher_send(self.hass, signal_event(self.config_entry.entry_id), ev)
+        if events:
+            self.store.save(delay=10)
+
+    # ------------------------------------------------------------------- phones
+    def start_phone_pairing(self, person: int, digit: int) -> dict[str, Any]:
+        self.phone_pairing = {"person": person, "digit": digit, "state": "waiting",
+                              "until": time.monotonic() + PHONE_PAIR_TIMEOUT_SECONDS}
+        return self.phone_pairing
+
+    async def _on_tag(self, event: Event) -> None:
+        """A Home Assistant tag was scanned: phone pairing or phone access."""
+        tag_id = event.data.get("tag_id")
+        device_id = event.data.get("device_id")
+        tag = self.store.data["tags"].get(str(tag_id))
+        if tag is None or not device_id:
+            return
+        entry_id = self.config_entry.entry_id
+        device = dr.async_get(self.hass).async_get(device_id)
+        device_name = (device.name_by_user or device.name) if device else device_id
+        pairing = self.phone_pairing
+        if pairing and time.monotonic() < pairing["until"]:
+            self.store.data["phones"][device_id] = {"person": pairing["person"], "digit": pairing["digit"],
+                                                    "name": device_name, "enabled": True}
+            self.store.save()
+            self.phone_pairing = None
+            self._snapshot_at = None
+            await self.async_refresh_snapshot(silent=True)
+            async_dispatcher_send(self.hass, signal_changed(entry_id),
+                                  {"pair": {"state": "done", "device_id": device_id, "name": device_name}})
+            return
+        door = int(tag.get("door", 1))
+        phone = self.store.data["phones"].get(device_id)
+        who = None
+        digit = cat = None
+        if phone:
+            digit = phone["digit"]
+            cat = self.store.category(digit)
+            person = self.snapshot and next((p for p in self.snapshot["persons"] if p["num"] == phone["person"]), None)
+            who = {"person": phone["person"], "person_name": person["name"] if person else None,
+                   "ha_person": person["ha_person"] if person else None}
+        allowed = bool(phone and phone.get("enabled", True) and cat and not self.store.is_disabled(phone["person"]))
+        result = RESULT_ACTION if allowed else RESULT_DENIED
+        digit, cat, gesture, toggled = self._resolve(digit, cat, result, ("phone", device_id))
+        if allowed and (cat or {}).get("relay"):
+            result = RESULT_GRANTED  # the integration releases the door itself (below)
+        user_id = None
+        if who and digit is not None:
+            try:
+                user_id = self.manager.numbering.user_id(who["person"], digit)
+            except Exception:  # noqa: BLE001 - informative only
+                user_id = None
+        ev = self._event(result=result, code=None,
+                         event_name="Phone access" if result != RESULT_DENIED else "Phone refused",
+                         user_id=user_id, who=who, digit=digit, cat=cat, gesture=gesture, toggled=toggled,
+                         method="phone", card=None, door=door, verify_mode=None, when=None, phone=device_name)
+        self._publish([ev])
+        if result == RESULT_GRANTED and (cat or {}).get("relay"):
+            seconds = int(self.config_entry.options.get(CONF_OPEN_SECONDS, DEFAULT_OPEN_SECONDS))
+            try:
+                await self.async_run(self.manager.door_control, door, "open", seconds, refresh=False)
+            except HomeAssistantError as ex:
+                _LOGGER.warning("Phone access: cannot open door %s: %s", door, ex)
 
     # -------------------------------------------------------------- operations
     async def async_run(self, func: Callable[..., T], *args: Any, refresh: bool = True) -> T:
@@ -294,7 +402,10 @@ class ZKCoordinator(DataUpdateCoordinator[ZKData]):
 
     # ---------------------------------------------------------------- lifecycle
     async def async_setup_schedules(self) -> None:
+        self._unsub_tags = self.hass.bus.async_listen("tag_scanned", self._on_tag)
+
         async def nightly(_now) -> None:
+            await self.async_run(self._measure_clock, refresh=False)
             if self.config_entry.options.get(CONF_SYNC_CLOCK, DEFAULT_SYNC_CLOCK):
                 try:
                     await self.async_run(self.client.set_time, refresh=False)
@@ -306,7 +417,7 @@ class ZKCoordinator(DataUpdateCoordinator[ZKData]):
         self._unsub_nightly = async_track_time_change(self.hass, nightly, hour=4, minute=0, second=0)
 
     async def async_shutdown(self) -> None:
-        for unsub in (self._unsub_nightly, self._unsub_backup):
+        for unsub in (self._unsub_nightly, self._unsub_backup, self._unsub_tags):
             if unsub:
                 unsub()
         await super().async_shutdown()

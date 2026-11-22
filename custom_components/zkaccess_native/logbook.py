@@ -5,7 +5,8 @@ from homeassistant.core import Event, HomeAssistant, callback
 
 from .const import DOMAIN, EVENT_ACCESS
 
-METHODS = {"fingerprint": "fingerprint", "card": "card", "code": "keypad code", "remote": "remote"}
+METHODS = {"fingerprint": "fingerprint", "card": "card", "code": "keypad code", "remote": "remote",
+           "phone": "phone"}
 
 
 @callback
@@ -22,6 +23,8 @@ def async_describe_events(hass: HomeAssistant, async_describe_event) -> None:
             message = f"{what} ({method})" if method else what
             if d.get("gesture") == "double":
                 message += ", second presentation"
+            if d.get("phone"):
+                message += f" — {d['phone']}"
         elif d.get("result") == "denied":
             message = f"denied: {d.get('event_name', '').lower()}"
         else:

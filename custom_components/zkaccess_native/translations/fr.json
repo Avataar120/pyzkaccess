@@ -57,6 +57,9 @@
       },
       "alarm": {
         "name": "Alarme porte {door}"
+      },
+      "connected": {
+        "name": "Connecté"
       }
     },
     "sensor": {
@@ -71,6 +74,9 @@
       },
       "last_person": {
         "name": "Dernière personne"
+      },
+      "clock_offset": {
+        "name": "Écart d'horloge"
       }
     },
     "button": {

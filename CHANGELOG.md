@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.0 - 2026-11-22
+
+### Home Assistant integration
+- **Phones as credentials**: Home Assistant NFC tags declared as readers, phone pairing from a
+  person's page, per-phone category and on/off; scans produce the usual access event
+  (`method: phone`), with second presentation and toggle; the door relay is released when the
+  category drives it.
+- **Toggle** category type: the category is chosen from the state of an entity.
+- `binary_sensor.<device>_connected` (connectivity) and `sensor.<device>_clock_offset`.
+- Diagnostics download with personal data redacted.
+- Access event: new `toggle` and `phone` fields.
+
 ## 0.2.1 - 2026-11-22
 
 - Enrollment wizard: the keypad menu is `3` (backup fingerprint), not `1` (add user). The

@@ -30,6 +30,10 @@ DEFAULTS: dict[str, Any] = {
     "fingers": {},
     # UserIDs already seen (to notify about users enrolled on the keypad)
     "known_user_ids": None,
+    # NFC tag id -> {"door": 1}: Home Assistant tags that act as readers for phones
+    "tags": {},
+    # phone (Home Assistant device id) -> {"person": n, "digit": d, "name": str, "enabled": bool}
+    "phones": {},
     "backup": {"on_change": True, "nightly": True, "keep": 30},
     "notify_keypad": True,
     "history": [],

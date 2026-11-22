@@ -132,3 +132,73 @@ async def test_door_and_backups(hass: HomeAssistant, emulator, setup):
     await call("person/delete", person=1)
     await call("backup/restore", name=name, mode="replace")
     assert (await call("state", refresh=True))["snapshot"]["persons"][0]["name"] == "Carol"
+
+
+async def test_phones_toggle_and_connectivity(hass: HomeAssistant, emulator, setup):
+    entry, call = setup
+    await call("categories/save", categories={
+        "0": {"type": "open", "name": "Open", "relay": True, "second": 9},
+        "3": {"type": "arm", "name": "Arm", "relay": False},
+        "4": {"type": "disarm", "name": "Disarm", "relay": False},
+        "5": {"type": "toggle", "name": "Alarm toggle", "relay": False,
+              "entity_id": "alarm_control_panel.home", "on": 4, "off": 3},
+        "9": {"type": "custom", "name": "Close + arm", "relay": False}})
+    await call("person/save", person=12, name="Alice")
+    await call("tags/save", tags={"tag-entrance": {"door": 1}})
+    await call("phone/pair_start", person=12, digit=0)
+
+    events = async_capture_events(hass, EVENT_ACCESS)
+    hass.bus.async_fire("tag_scanned", {"tag_id": "tag-entrance", "device_id": "phone-1"})
+    await hass.async_block_till_done()
+    alice = (await call("state"))["snapshot"]["persons"][0]
+    assert alice["phones"][0]["device_id"] == "phone-1" and alice["phones"][0]["digit"] == 0
+    assert events == []                                       # pairing scan is not an access
+
+    hass.bus.async_fire("tag_scanned", {"tag_id": "tag-entrance", "device_id": "phone-1"})
+    await hass.async_block_till_done()
+    ev = events[-1].data
+    assert ev["result"] == "granted" and ev["method"] == "phone" and ev["person_name"] == "Alice"
+    assert emulator.state.controls[-1][:3] == (1, 1, 1)       # relay category: the door is released
+
+    hass.bus.async_fire("tag_scanned", {"tag_id": "tag-entrance", "device_id": "phone-1"})
+    await hass.async_block_till_done()
+    assert events[-1].data["category"] == "Close + arm" and events[-1].data["gesture"] == "double"
+
+    await call("phone/update", device_id="phone-1", digit=5)  # toggle category
+    hass.states.async_set("alarm_control_panel.home", "disarmed")
+    hass.bus.async_fire("tag_scanned", {"tag_id": "tag-entrance", "device_id": "phone-1"})
+    await hass.async_block_till_done()
+    assert events[-1].data["category"] == "Arm" and events[-1].data["toggle"] is True
+    hass.states.async_set("alarm_control_panel.home", "armed_away")
+    entry.runtime_data._repeat._last.clear()
+    hass.bus.async_fire("tag_scanned", {"tag_id": "tag-entrance", "device_id": "phone-1"})
+    await hass.async_block_till_done()
+    assert events[-1].data["category"] == "Disarm" and events[-1].data["result"] == "action"
+
+    await call("person/enable", person=12, enabled=False)
+    entry.runtime_data._repeat._last.clear()
+    hass.bus.async_fire("tag_scanned", {"tag_id": "tag-entrance", "device_id": "phone-1"})
+    hass.bus.async_fire("tag_scanned", {"tag_id": "tag-entrance", "device_id": "stranger"})
+    await hass.async_block_till_done()
+    assert [e.data["result"] for e in events[-2:]] == ["denied", "denied"]
+    hass.bus.async_fire("tag_scanned", {"tag_id": "other-tag", "device_id": "phone-1"})
+    await hass.async_block_till_done()
+    assert len(events) == 6                                   # tags not declared are ignored
+
+    await call("phone/remove", device_id="phone-1")
+    assert (await call("state"))["snapshot"]["persons"][0]["phones"] == []
+
+    assert hass.states.get("binary_sensor.front_door_connected").state == "on"
+    from custom_components.zkaccess_native.diagnostics import async_get_config_entry_diagnostics
+    diag = await async_get_config_entry_diagnostics(hass, entry)
+    assert diag["settings"]["tags"] == 1 and diag["entry"]["data"]["host"] == "**REDACTED**"
+
+
+async def test_toggle_needs_valid_targets(hass: HomeAssistant, emulator, setup, hass_ws_client):
+    entry, call = setup
+    ws = await hass_ws_client(hass)
+    await ws.send_json({"id": 1, "type": f"{DOMAIN}/categories/save", "entry_id": entry.entry_id,
+                        "categories": {"0": {"type": "open", "name": "Open", "relay": True},
+                                       "5": {"type": "toggle", "name": "T", "entity_id": "x.y", "on": 6, "off": 0}}})
+    msg = await ws.receive_json()
+    assert not msg["success"]

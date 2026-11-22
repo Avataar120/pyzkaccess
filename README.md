@@ -345,17 +345,35 @@ person 12 + category 3 (Arm)   -> UserID 123
   few seconds runs a second category *in addition*. Example: badge once to open the gate,
   twice to open the gate and then lock and arm the house.
 
+- **Toggle** categories: one presentation, and Home Assistant picks the category from the state
+  of an entity (e.g. alarm armed → *Disarm*, otherwise → *Arm*). Active means anything but
+  `off`, `unlocked`, `disarmed`, `closed`, `not_home`, `idle`, `unavailable`, `unknown`.
+
 Prefer one UserID per person, without categories? Choose **One UserID per person** in
 **Settings → Numbering**.
+
+### Phones (NFC tags)
+
+A phone running the Home Assistant app can act as a badge:
+
+1. Create a tag in Home Assistant (**Settings → Tags**), stick it next to the door, and declare
+   it in **Access control → Settings → NFC tags** with the door it stands for.
+2. On a person's page, **Pair a phone**: the next phone that scans a declared tag within two
+   minutes is paired with that person, in the chosen category.
+3. A scan then produces the same `zkaccess_native_access` event as a fingerprint or a card
+   (`method: phone`, `phone: <device name>`), with second presentation (scan twice) and toggle
+   categories. If the category drives the relay, the integration releases the door itself.
+
+Disabling a person also disables their phones; each phone can also be disabled on its own.
 
 ### The Access control page
 
 | Tab | What you can do |
 |---|---|
-| **People** | list, search, create; per person: a two-hand view of enrolled fingers with their category, move a finger to another category, delete it; cards and codes per category; enable / disable all access (rights are remembered and restored); link to a Home Assistant person; delete. UserIDs that do not follow the numbering (e.g. enrolled on the keypad) are listed as **Unassigned** and can be attached to a person. |
+| **People** | list, search, create; per person: a two-hand view of enrolled fingers with their category, move a finger to another category, delete it; cards and codes per category; paired phones; enable / disable all access (rights are remembered and restored); link to a Home Assistant person; delete. UserIDs that do not follow the numbering (e.g. enrolled on the keypad) are listed as **Unassigned** and can be attached to a person. |
 | **Activity** | live log with names, category, method (fingerprint, card, code, remote) and second presentations; filters; unknown cards can be assigned in one click |
 | **Door** | open / hold open / close the lock relay; door settings written to the device (relay time, door sensor, open-door alarm delay, verification mode, free-passage time zone, relock on close); device clock; cancel alarm |
-| **Settings** | numbering, action categories, second-presentation delay, automatic backups (on every change, nightly, retention), download / restore / import, keypad notifications |
+| **Settings** | numbering, action categories (incl. toggle), second-presentation delay, NFC tags for phones, automatic backups (on every change, nightly, retention), download / restore / import, keypad notifications |
 
 **Enrolling a fingerprint.** Fingerprints are captured by the device itself (there is no
 remote enrollment command). Click a free finger on the hand, pick its category: the page
@@ -379,6 +397,8 @@ unknown, the page shows its number and writes it to the chosen person and catego
 | `sensor.<device>_people`, `_fingerprints`, `_cards` | counters |
 | `button.<device>_open_door_N` | pulse the lock relay |
 | `button.<device>_sync_clock` | set the device clock |
+| `binary_sensor.<device>_connected` | device reachable (stays available, so you can alert on it) |
+| `sensor.<device>_clock_offset` | device clock drift before the last sync, in seconds |
 
 Every access event is also fired on the bus as **`zkaccess_native_access`** with:
 
@@ -389,7 +409,9 @@ Every access event is also fired on the bus as **`zkaccess_native_access`** with
 | `ha_person` | `person.alice` | linked Home Assistant person, if any |
 | `category`, `category_digit`, `category_type` | `Arm`, `3`, `arm` | the action category |
 | `gesture` | `single` / `double` | `double` = second presentation |
-| `method` | `fingerprint` | `fingerprint`, `card`, `code`, `remote`, `other` |
+| `method` | `fingerprint` | `fingerprint`, `card`, `code`, `phone`, `remote`, `other` |
+| `toggle` | `true` | the category was chosen by a toggle |
+| `phone` | `Pixel 9` | name of the phone (phone access only) |
 | `user_id`, `card`, `door`, `event`, `event_name`, `time`, `device_id` | | raw details |
 
 Actions: `zkaccess_native.set_user`, `delete_user`, `grant`, `revoke`, `open_door`,
@@ -397,6 +419,9 @@ Actions: `zkaccess_native.set_user`, `delete_user`, `grant`, `revoke`, `open_doo
 
 Options: polling interval (default 1 s), door open duration, clock sync on connection.
 The device clock is also synced every night at 04:00.
+
+**Diagnostics** can be downloaded from the device page (personal data, card numbers, names
+and addresses are removed).
 
 ### Example automations
 
