@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.0 - 2026-11-22
 
 - Home Assistant integration: **Reconfigure** a device (new address, port or password)
   without losing anything; a refused communication password asks for the new one (reauth).
@@ -23,9 +23,6 @@
 - Blueprints: run actions for a category, open and disarm, lock and arm when leaving, alert
   on repeated refusals (`blueprints/automation/zkaccess_native`).
 - Emulator: `DeviceState.door_sensors` sets the door contacts of the status record.
-
-## Unreleased
-
 - README: manual installation without HACS (download a release, copy
   `custom_components/zkaccess_native`, restart).
 
