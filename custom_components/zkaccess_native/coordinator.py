@@ -74,6 +74,7 @@ class ZKCoordinator(IdentifyMixin, PhoneMixin, MaintenanceMixin, DataUpdateCoord
         self._unreachable_since: Optional[float] = None
         self._unreachable_issue = False
         self._slow_restarts: list[float] = []
+        self._slot_repair_running = False
         self._last_auto_restart: Optional[float] = None  # monotonic time of the last automatic reboot
         self._unsub_hourly: Optional[Callable[[], None]] = None
         #: restore running in the background after a finger was identified
@@ -203,6 +204,7 @@ class ZKCoordinator(IdentifyMixin, PhoneMixin, MaintenanceMixin, DataUpdateCoord
         """Rebuild the snapshot when the device content changed (or when ``force``:
         integration-side data such as categories or physical fingers changed)."""
         self._last_raw = raw
+        self._check_template_slots(raw)
         digest = self.manager.fingerprint(raw)
         device_changed = digest != self._raw_hash
         if not device_changed and not force:
@@ -233,6 +235,39 @@ class ZKCoordinator(IdentifyMixin, PhoneMixin, MaintenanceMixin, DataUpdateCoord
                 await self.async_backup("change detected")
 
             self._unsub_backup = async_call_later(self.hass, 20, run)
+
+    @callback
+    def _check_template_slots(self, raw: dict[str, Any]) -> None:
+        """Safety net: every template must be bound to its own user's internal slot. One that
+        is not fails, or matches whoever owns that slot (seen on the MA500 after a user moved
+        slot). Rebind them at once and tell the user."""
+        if self._slot_repair_running or self.store.data.get("identify_pending"):
+            return
+        slots = {u["Pin"]: u.get("UID") for u in raw["users"]}
+        wrong = sorted({t["Pin"] for t in raw["templates"]
+                        if t.get("UID") is not None and t["Pin"] in slots and slots[t["Pin"]] != t["UID"]})
+        if not wrong:
+            return
+        self._slot_repair_running = True
+
+        async def repair() -> None:
+            try:
+                fixed = await self.async_run(self.client.repair_template_slots, background=True)
+            except HomeAssistantError as ex:
+                _LOGGER.error("Fingerprints of UserIDs %s are bound to another slot; repair failed: %s", wrong, ex)
+                return
+            finally:
+                self._slot_repair_running = False
+            if fixed:
+                _LOGGER.warning("Fingerprints of UserIDs %s were bound to another user's slot: rebound", fixed)
+                persistent_notification.async_create(
+                    self.hass,
+                    f"The fingerprints of UserID(s) {', '.join(map(str, fixed))} were bound to another "
+                    "internal slot of the device (they could fail or be recognized as another person). "
+                    "They have been rebound to their own user.",
+                    title=f"{self.config_entry.title}: fingerprints repaired",
+                    notification_id=f"{DOMAIN}_{self.config_entry.entry_id}_slots")
+        self.hass.async_create_task(repair())
 
     def _notify_new_user(self, user_id: int) -> None:
         persistent_notification.async_create(

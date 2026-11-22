@@ -124,10 +124,16 @@ class DeviceState:
             rows = self.data[table.name]
             existing = next((r for r in rows if keys and all(r.get(k) == full.get(k) for k in keys)), None)
             if table.name == "user":
-                # The device assigns the UID itself and ignores the one sent.
-                full["UID"] = existing["UID"] if existing else self.next_uid
-                if not existing:
-                    self.next_uid += 1
+                # Like the MA500 (verified 22/11/2026): a new user gets the lowest free slot; an
+                # existing user rewritten with its own slot keeps it, and rewritten without one
+                # moves to the lowest free slot (its own counting as free). Templates stay bound
+                # to the slot they were written with.
+                others = {r["UID"] for r in rows if r is not existing}
+                lowest = next(i for i in range(1, len(rows) + 2) if i not in others)
+                if existing and row.get("UID") == existing["UID"]:
+                    full["UID"] = existing["UID"]
+                else:
+                    full["UID"] = lowest
             if existing is not None:
                 rows[rows.index(existing)] = full
             else:

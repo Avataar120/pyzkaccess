@@ -236,3 +236,24 @@ def test_scan_refuses_bad_ranges():
         scan(["10.0.0.0/16"])                                 # too large
     with pytest.raises(ValueError):
         scan(["not-a-network"])
+
+
+def test_rename_keeps_slot_and_templates(dev):
+    """MA500: a record rewritten without its slot moves to the lowest free one while its
+    templates stay behind (a renamed user's finger then matched someone else)."""
+    for uid in (101, 102, 109):
+        dev.save_user(User(user_id=uid, name="Bob"))
+    dev.save_template(Template(user_id=109, finger_id=0, template=b"N" * 40))
+    slot = dev.get_user(109).slot
+    dev.delete_user(101)                                  # frees a lower slot
+    dev.save_user(User(user_id=109, name="Robert"))       # rename
+    assert dev.get_user(109).slot == slot
+    assert [t.slot for t in dev.get_templates(109)] == [slot]
+    assert dev.check_template_slots() == []
+    # The device itself moves a record written without its slot (raw write):
+    dev.write_records("user", [{"Pin": 109, "Name": "raw"}])
+    moved = dev.get_user(109).slot
+    assert moved != slot and dev.check_template_slots() == [(109, slot, moved)]
+    assert dev.repair_template_slots() == [109]
+    assert [t.slot for t in dev.get_templates(109)] == [moved] and dev.check_template_slots() == []
+    assert dev.get_templates(109)[0].template == b"N" * 40

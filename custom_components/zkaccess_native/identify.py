@@ -57,6 +57,8 @@ class IdentifyMixin:
         if access_method(ev) in ("card", "code", "remote"):
             return
         uid = ev.user_id or 0
+        _LOGGER.info("Identification step %s: the device reported UserID %s (event %s)",
+                     idf["step"], uid, int(ev.event))
         if idf["step"] == 2:
             mapping = idf.get("mapping") or {}
             if uid in mapping:

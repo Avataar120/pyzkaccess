@@ -30,7 +30,7 @@ _LOGGER = logging.getLogger(__name__)
 #: Longest name the device is known to keep.
 NAME_MAX = 24
 #: Device fields read for the snapshot (fingerprint data is never needed there).
-TEMPLATE_LIGHT = ["Pin", "FingerID", "Size", "Valid"]
+TEMPLATE_LIGHT = ["UID", "Pin", "FingerID", "Size", "Valid"]
 
 
 class Numbering:

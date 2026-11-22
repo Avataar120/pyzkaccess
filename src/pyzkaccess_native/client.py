@@ -7,7 +7,7 @@ import threading
 import time
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Dict, Iterable, Iterator, List, Mapping, Optional, Sequence
+from typing import Any, Dict, Iterable, Iterator, List, Mapping, Optional, Sequence, Tuple
 
 from . import codec, protocol
 from .codec import Row, Table
@@ -469,21 +469,70 @@ class ZKAccess:
         ``merge=True`` (default) the attributes left to ``None`` are taken from
         the stored record, so ``save_user(User(user_id=5, name="Bob"))`` only renames.
 
-        The internal ``slot`` is never sent: the device assigns it.
+        A new user gets its internal ``slot`` from the device. An existing user is
+        rewritten **with its own slot**: the MA500 moves a record rewritten without
+        it to the lowest free slot, while its fingerprint templates stay bound to
+        the old one (they then fail, or match the next user given that slot). If
+        the slot changes anyway, the user's templates are rebound to the new one.
         """
         with self._lock:
             row = user.to_row()
-            if merge:
-                current = self.read_table("user", where={"Pin": user.user_id})
-                if current:
-                    row = {**current[0], **row}
+            current = self.read_table("user", where={"Pin": user.user_id})
+            if merge and current:
+                row = {**current[0], **row}
             row = self._known("user", row)
             row.pop("UID", None)
+            old_slot = current[0].get("UID") if current else None
+            if old_slot is not None:
+                row["UID"] = old_slot
             self.write_records("user", [row])
             stored = self.get_user(user.user_id)
             if stored is None:
                 raise ProtocolError(f"user {user.user_id} was not stored")
+            if old_slot is not None and stored.slot is not None and stored.slot != old_slot:
+                _LOG.warning("user %s moved from slot %s to %s: rebinding its templates",
+                             user.user_id, old_slot, stored.slot)
+                self.rebind_templates(user.user_id, stored.slot)
             return stored
+
+    def rebind_templates(self, user_id: int, slot: int) -> int:
+        """Bind all the templates of ``user_id`` to ``slot`` (the user's own slot).
+        Returns the number of templates rewritten. Templates are deleted by ``Pin``
+        and written back (a single-condition delete: see :meth:`delete_templates`)."""
+        with self._lock:
+            templates = self.get_templates(user_id)
+            if all(t.slot == slot for t in templates):
+                return 0
+            self.delete_records("templatev10", {"Pin": user_id})
+            for t in templates:
+                row = Template(user_id=user_id, finger_id=t.finger_id, template=t.template,
+                               valid=t.valid).to_row()
+                row["UID"] = slot
+                row.setdefault("EndTag", 13)
+                self.write_records("templatev10", [self._known("templatev10", row)])
+            return len(templates)
+
+    def check_template_slots(self) -> List[Tuple[int, int, Optional[int]]]:
+        """Templates bound to another slot than their own user's: ``(UserID, template
+        slot, user slot)``. Such a template fails, or matches whoever owns that slot."""
+        with self._lock:
+            slots = {u["Pin"]: u.get("UID") for u in self.read_table("user", fields=["UID", "Pin"])}
+            rows = self.read_table("templatev10", fields=["UID", "Pin", "FingerID"])
+        seen = {}
+        for r in rows:
+            if slots.get(r["Pin"]) != r.get("UID"):
+                seen[r["Pin"]] = (r["Pin"], r.get("UID"), slots.get(r["Pin"]))
+        return list(seen.values())
+
+    def repair_template_slots(self) -> List[int]:
+        """Rebind every template to its own user's slot. Returns the UserIDs fixed
+        (templates of a UserID that no longer exists are left alone)."""
+        fixed = []
+        with self._lock:
+            for user_id, _template_slot, user_slot in self.check_template_slots():
+                if user_slot is not None and self.rebind_templates(user_id, user_slot):
+                    fixed.append(user_id)
+        return fixed
 
     def delete_user(self, user_id: int, cascade: bool = True) -> None:
         """Delete a user. With ``cascade`` its templates and authorizations go too

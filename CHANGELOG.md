@@ -12,6 +12,16 @@
   more than 30 minutes; device rebooted for slowness at least twice in 24 hours.
 - Home Assistant integration: icons in `icons.json` (entities and actions), `PARALLEL_UPDATES`
   declared, diagnostics include the maintenance settings, last response time and reboot.
+- **Fix (MA500): fingerprints recognized as another person.** Rewriting a user's record
+  (rename, card, code) without its internal slot made the MA500 move the user to the lowest
+  free slot while its fingerprint templates stayed bound to the old one: they failed, or matched
+  the next user given that slot. The library now rewrites a user with its own slot, checks it,
+  and rebinds the templates if the device moved it anyway (`rebind_templates`,
+  `check_template_slots`, `repair_template_slots`). The emulator now behaves like the MA500.
+- Home Assistant integration: safety net, every read of the device checks that each template is
+  bound to its own user's slot, and rebinds it otherwise (with a notification).
+- Home Assistant integration: each reading during a finger identification is logged (step,
+  UserID reported, event code).
 - Code: the coordinator is split into `identify.py`, `phones.py`, `maintenance.py` and
   `helpers.py` (no behaviour change).
 

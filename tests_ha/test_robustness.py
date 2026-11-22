@@ -68,3 +68,20 @@ async def test_diagnostics_has_maintenance(hass: HomeAssistant, entry):
     assert diag["maintenance"]["nightly_restart"] is True and "response_time" in diag["maintenance"]
     assert diag["poll_interval"] == 1.0
     json.dumps(diag)
+
+
+async def test_template_slots_safety_net(hass: HomeAssistant, emulator, entry):
+    """A template left on another slot (user moved by the device) is rebound at the next read."""
+    from pyzkaccess_native import Template, User, ZKAccess
+    with ZKAccess("127.0.0.1", emulator.port) as dev:
+        for uid in (101, 109):
+            dev.save_user(User(user_id=uid, name="Bob"))
+        dev.save_template(Template(user_id=109, finger_id=0, template=b"N" * 40))
+        dev.delete_user(101)
+        dev.write_records("user", [{"Pin": 109, "Name": "Bob"}])   # raw write: the device moves 109
+        assert dev.check_template_slots()
+    coord = entry.runtime_data
+    await coord.async_refresh_snapshot(silent=True)
+    await hass.async_block_till_done()
+    with ZKAccess("127.0.0.1", emulator.port) as dev:
+        assert dev.check_template_slots() == []
