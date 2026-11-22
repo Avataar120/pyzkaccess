@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.1 - 2026-11-22
 
 - Home Assistant integration: the sidebar name of the *Access control* page can be changed
   in its Settings (empty = default); applied at once, kept across restarts.
