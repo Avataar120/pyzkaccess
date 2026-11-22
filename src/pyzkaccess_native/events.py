@@ -230,15 +230,19 @@ class RepeatDetector:
     key (typically the UserID, or the card number for unknown cards) was seen
     less than ``window`` seconds before. A third presentation starts a new
     pair, so a double is reported only once.
+
+    Pass ``when`` (a timestamp, e.g. the device time of the event) to measure
+    the gap with it rather than with the reception time: polling and network
+    delays then do not count. Use the same kind of timestamp for one key.
     """
 
-    def __init__(self, window: float = 3.0, clock=time.monotonic):
+    def __init__(self, window: float = 5.0, clock=time.monotonic):
         self.window = window
         self._clock = clock
         self._last: Dict[Hashable, float] = {}
 
-    def check(self, key: Hashable) -> bool:
-        now = self._clock()
+    def check(self, key: Hashable, when: Optional[float] = None) -> bool:
+        now = self._clock() if when is None else when
         last = self._last.get(key)
         if last is not None and now - last <= self.window:
             del self._last[key]

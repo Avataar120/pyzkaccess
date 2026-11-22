@@ -24,11 +24,11 @@ from pyzkaccess_native import (AccessEvent, DeviceInfo, DoorStatus, RepeatDetect
 from pyzkaccess_native.events import DENIED_EVENTS, GRANTED_EVENTS
 
 from .const import (CONF_OPEN_SECONDS, CONF_POLL_INTERVAL, CONF_SYNC_CLOCK, DEFAULT_OPEN_SECONDS,
-                    DEFAULT_POLL_INTERVAL, DEFAULT_SYNC_CLOCK, DOMAIN, ENROLL_TIMEOUT_SECONDS, EVENT_ACCESS,
-                    IDENTIFY_PINS, IDENTIFY_TIMEOUT_SECONDS, PANEL_URL, PHONE_ECHO_SECONDS,
-                    PHONE_PAIR_TIMEOUT_SECONDS, POLL_INTERVAL_MAX, POLL_INTERVAL_MIN, RESULT_ACTION,
-                    RESULT_DENIED, RESULT_GRANTED, RESULT_OTHER, RETRY_MAX_SECONDS, RETRY_MIN_SECONDS,
-                    SNAPSHOT_REFRESH_SECONDS, TOGGLE_INACTIVE_STATES)
+                    DEFAULT_POLL_INTERVAL, DEFAULT_SECOND_WINDOW, DEFAULT_SYNC_CLOCK, DOMAIN,
+                    ENROLL_TIMEOUT_SECONDS, EVENT_ACCESS, IDENTIFY_PINS, IDENTIFY_TIMEOUT_SECONDS, PANEL_URL,
+                    PHONE_ECHO_SECONDS, PHONE_PAIR_TIMEOUT_SECONDS, POLL_INTERVAL_MAX, POLL_INTERVAL_MIN,
+                    RESULT_ACTION, RESULT_DENIED, RESULT_GRANTED, RESULT_OTHER, RETRY_MAX_SECONDS,
+                    RETRY_MIN_SECONDS, SNAPSHOT_REFRESH_SECONDS, TOGGLE_INACTIVE_STATES)
 from .manager import AccessManager
 from .store import AccessStore
 
@@ -97,7 +97,8 @@ class ZKCoordinator(DataUpdateCoordinator[ZKData]):
         self._raw_hash: Optional[str] = None
         self._user_index: dict[int, dict[str, Any]] = {}
         self._snapshot_at: Optional[float] = None  # None = refresh on the next poll
-        self._repeat = RepeatDetector(store.data.get("second_window", 3.0))
+        # Wall-clock seconds: device event times and Home Assistant times (phones) compare.
+        self._repeat = RepeatDetector(store.data.get("second_window", DEFAULT_SECOND_WINDOW), clock=time.time)
         self.enrollment: Optional[dict[str, Any]] = None
         #: finger identification in progress (reader events are not published meanwhile)
         self.identify: Optional[dict[str, Any]] = None
@@ -298,7 +299,8 @@ class ZKCoordinator(DataUpdateCoordinator[ZKData]):
             result = RESULT_OTHER
         if disabled and result in (RESULT_GRANTED, RESULT_ACTION):
             result = RESULT_DENIED
-        digit, cat, gesture, toggled = self._resolve(digit, cat, result, ("user", ev.user_id) if ev.user_id else None)
+        digit, cat, gesture, toggled = self._resolve(digit, cat, result, ("user", ev.user_id) if ev.user_id else None,
+                                                     when=ev.time.timestamp() if ev.time else None)
         if gesture == "double":
             result = RESULT_ACTION
         if who and result in (RESULT_GRANTED, RESULT_ACTION) and self.store.is_category_off(who["person"], digit):
@@ -310,12 +312,12 @@ class ZKCoordinator(DataUpdateCoordinator[ZKData]):
                            when=ev.time.isoformat() if ev.time else None)
 
     def _resolve(self, digit: Optional[int], cat: Optional[dict[str, Any]], result: str,
-                 repeat_key: Any) -> tuple[Optional[int], Optional[dict[str, Any]], str, bool]:
+                 repeat_key: Any, when: Optional[float] = None) -> tuple[Optional[int], Optional[dict[str, Any]], str, bool]:
         """Second presentation, then toggle: the category that finally applies."""
         gesture = "single"
         if result in (RESULT_GRANTED, RESULT_ACTION) and repeat_key is not None:
-            self._repeat.window = float(self.store.data.get("second_window", 3.0))
-            if self._repeat.check(repeat_key) and cat and cat.get("second") is not None:
+            self._repeat.window = float(self.store.data.get("second_window", DEFAULT_SECOND_WINDOW))
+            if self._repeat.check(repeat_key, when) and cat and cat.get("second") is not None:
                 digit = int(cat["second"])
                 cat = self.store.category(digit)
                 gesture = "double"

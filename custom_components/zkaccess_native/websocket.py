@@ -9,8 +9,8 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
-from .const import (CONF_POLL_INTERVAL, DOMAIN, NUMBERING_CATEGORY, NUMBERING_PLAIN, POLL_INTERVAL_MAX,
-                    POLL_INTERVAL_MIN)
+from .const import (CONF_POLL_INTERVAL, DEFAULT_SECOND_WINDOW, DOMAIN, NUMBERING_CATEGORY, NUMBERING_PLAIN,
+                    POLL_INTERVAL_MAX, POLL_INTERVAL_MIN)
 from .coordinator import ZKCoordinator, poll_interval, signal_changed, signal_event
 
 ENTRY = vol.Required("entry_id")
@@ -42,7 +42,7 @@ def _state(coord: ZKCoordinator) -> dict[str, Any]:
         ] if status else [],
         "snapshot": coord.snapshot,
         "categories": coord.store.categories,
-        "second_window": coord.store.data.get("second_window", 3.0),
+        "second_window": coord.store.data.get("second_window", DEFAULT_SECOND_WINDOW),
         "numbering": coord.store.data["numbering"],
         "settings": {"backup": coord.store.data["backup"],
                      "notify_keypad": coord.store.data.get("notify_keypad", True),

@@ -672,7 +672,7 @@ class ZkAccessPanel extends HTMLElement {
         on: Number(this.val(`ct-on-${d}`) || 0), off: Number(this.val(`ct-off-${d}`) || 0) });
     }
     const numbering = this.val("numbering") || "category";
-    await this.call("categories/save", { categories: out, second_window: Number(this.val("second-window") || 3), numbering }, this.t("saved"));
+    await this.call("categories/save", { categories: out, second_window: Number(this.val("second-window") || 5), numbering }, this.t("saved"));
     await this.refresh();
   }
 
@@ -1050,7 +1050,7 @@ class ZkAccessPanel extends HTMLElement {
         <div class="row" style="margin-bottom:12px"><label class="field" style="flex:1 1 320px">${this.t("numbering")}<select id="numbering">
           <option value="category" ${!this.plain() ? "selected" : ""}>${this.t("numbering_category")}</option>
           <option value="plain" ${this.plain() ? "selected" : ""}>${this.t("numbering_plain")}</option></select></label>
-          <label class="field">${this.t("within")}<input id="second-window" type="number" min="1" max="10" step="0.5" value="${st?.second_window ?? 3}" style="width:110px"></label></div>
+          <label class="field">${this.t("within")}<input id="second-window" type="number" min="1" max="10" step="0.5" value="${st?.second_window ?? 5}" style="width:110px"></label></div>
         ${this.plain() ? "" : `<table style="min-width:680px"><thead><tr><th>${this.t("digit")}</th><th>${this.t("type")}</th><th>${this.t("display_name")}</th>
           <th>${this.t("relay")}</th><th>${this.t("second_pres")}</th><th>${this.t("used_by")}</th></tr></thead><tbody>${rows.join("")}</tbody></table>`}
         <div class="actions" style="margin-top:12px"><button class="btn primary" data-act="cats-save">${this.t("save")}</button></div></section>

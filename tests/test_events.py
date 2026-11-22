@@ -22,3 +22,13 @@ def test_unknown_event_code_kept():
 def test_denied():
     rec = parse_rtlog(bytes.fromhex("00000000" "00000000" "01" "01" "22" "00" "84d38333"))[0]
     assert rec.event == EventType.UNREGISTERED_FINGERPRINT and rec.denied
+
+
+def test_repeat_detector_uses_event_time():
+    from pyzkaccess_native import RepeatDetector
+    clock = iter([1000.0, 1010.0, 1020.0])
+    rep = RepeatDetector(3.0, clock=lambda: next(clock))
+    # Received 10 s apart (slow polling), but presented 2 s apart on the device.
+    assert rep.check(100, when=500.0) is False
+    assert rep.check(100, when=502.0) is True
+    assert rep.check(100, when=520.0) is False

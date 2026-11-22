@@ -344,7 +344,8 @@ person 12 + category 3 (Arm)   -> UserID 123
   verified on the MA500), and the integration turns that refusal into an `action` event for
   Home Assistant.
 - **Second presentation** (per category): presenting the same card or finger again within a
-  few seconds runs a second category *in addition*. Example: badge once to open the gate,
+  few seconds (5 s by default, measured with the device's own event time) runs a second
+  category *in addition*. Example: badge once to open the gate,
   twice to open the gate and then lock and arm the house.
 
 - **Toggle** categories: one presentation, and Home Assistant picks the category from the state
