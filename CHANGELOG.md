@@ -11,6 +11,11 @@
 - `binary_sensor.<device>_connected` (connectivity) and `sensor.<device>_clock_offset`.
 - Diagnostics download with personal data redacted.
 - Access event: new `toggle` and `phone` fields.
+- Panel: confirmation before a category change removes the right to open from existing
+  UserIDs; instant updates for integration-side changes (finger on the hand, phones);
+  busy indicator; a finger can be un-placed from the hand; device clock and device info moved
+  to Settings; "Reload from the device" button; NFC tags labelled explicitly; door choice
+  only shown on multi-door devices.
 
 ## 0.2.1 - 2026-11-22
 
