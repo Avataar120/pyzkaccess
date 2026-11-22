@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.3 - 2026-11-22
 
 - Home Assistant integration: the automatic reboot of a slow device could not happen during
   the first 6 hours after the host started (cool-down measured from the host's boot).
