@@ -6,7 +6,7 @@ The binary RTLog command (``0x0B``) returns zero or more 16-byte records:
 Bytes     Access event                 Door / alarm status (code 255)
 ========  ===========================  =============================
 0-3       card number (LE)             alarm state, one byte per door
-4-7       user PIN (LE)                door sensor state, one byte per door
+4-7       UserID (LE)                  door sensor state, one byte per door
 8         verification mode
 9         door / reader number
 10        event code                   255
@@ -16,10 +16,12 @@ Bytes     Access event                 Door / alarm status (code 255)
 """
 from __future__ import annotations
 
+import time
+import warnings
 from dataclasses import dataclass
 from datetime import datetime
 from enum import IntEnum
-from typing import List, Optional, Union
+from typing import Dict, Hashable, List, Optional, Union
 
 from .codec import decode_datetime
 
@@ -142,7 +144,7 @@ class AccessEvent:
     """An access event (anything but a status record)."""
 
     event: Union[EventType, int]
-    pin: int
+    user_id: int
     card: int
     door: int
     verify_mode: Union[VerifyMode, int]
@@ -161,6 +163,11 @@ class AccessEvent:
     @property
     def label(self) -> str:
         return event_label(int(self.event))
+
+    @property
+    def pin(self) -> int:
+        warnings.warn("'pin' is deprecated, use 'user_id'", DeprecationWarning, stacklevel=2)
+        return self.user_id
 
 
 @dataclass
@@ -205,7 +212,7 @@ def parse_rtlog(data: bytes) -> List[RTLogRecord]:
         else:
             out.append(AccessEvent(
                 event=_enum(EventType, rec[10]),
-                pin=int.from_bytes(rec[4:8], "little"),
+                user_id=int.from_bytes(rec[4:8], "little"),
                 card=int.from_bytes(rec[0:4], "little"),
                 door=rec[9],
                 verify_mode=_enum(VerifyMode, rec[8]),
@@ -214,3 +221,30 @@ def parse_rtlog(data: bytes) -> List[RTLogRecord]:
                 raw=rec,
             ))
     return out
+
+
+class RepeatDetector:
+    """Detects a credential presented again shortly after (a "double badge").
+
+    Feed it every access event; :meth:`check` returns ``True`` when the same
+    key (typically the UserID, or the card number for unknown cards) was seen
+    less than ``window`` seconds before. A third presentation starts a new
+    pair, so a double is reported only once.
+    """
+
+    def __init__(self, window: float = 3.0, clock=time.monotonic):
+        self.window = window
+        self._clock = clock
+        self._last: Dict[Hashable, float] = {}
+
+    def check(self, key: Hashable) -> bool:
+        now = self._clock()
+        last = self._last.get(key)
+        if last is not None and now - last <= self.window:
+            del self._last[key]
+            return True
+        self._last[key] = now
+        # forget old entries
+        for k in [k for k, t in self._last.items() if now - t > self.window]:
+            del self._last[k]
+        return False

@@ -1,8 +1,8 @@
 """Full backup and restore of a device's configuration tables, as JSON.
 
-Fingerprint templates are restored byte for byte. Device UIDs cannot be chosen
-by the client, so templates are re-bound to the UID the device gives each user
-on restore.
+Fingerprint templates are restored byte for byte. Internal slots (field `UID`)
+cannot be chosen by the client, so templates are re-bound to the slot the device
+gives each user on restore.
 """
 from __future__ import annotations
 
@@ -71,7 +71,7 @@ def restore(dev: ZKAccess, snapshot: Dict[str, Any], tables: Optional[Iterable[s
 
     With ``wipe=True`` each restored table is erased first, so the device ends
     up with exactly the snapshot content. Without it, records are merged
-    (existing PINs are overwritten, others are kept).
+    (existing UserIDs are overwritten, others are kept).
     """
     data = snapshot["tables"]
     names = [t for t in CONFIG_TABLES if t in data and (tables is None or t in tables)]
@@ -84,7 +84,7 @@ def restore(dev: ZKAccess, snapshot: Dict[str, Any], tables: Optional[Iterable[s
         if wipe:
             for name in reversed(names):
                 dev.delete_records(name, None, allow_wipe=True)
-        uids: Dict[int, int] = {}
+        slots: Dict[int, int] = {}  # UserID -> internal slot given by the device
         for name in names:
             rows = _from_json(dev, name, data[name])
             if name == "user":
@@ -92,13 +92,13 @@ def restore(dev: ZKAccess, snapshot: Dict[str, Any], tables: Optional[Iterable[s
                     row.pop("UID", None)
                     dev.write_records(name, [row])
                 stored = dev.read_table("user", fields=["UID", "Pin"])
-                uids = {u["Pin"]: u["UID"] for u in stored}
-                if len(set(uids.values())) != len(uids):
-                    raise SafetyError("the device assigned duplicate UIDs; templates not restored")
+                slots = {u["Pin"]: u["UID"] for u in stored}
+                if len(set(slots.values())) != len(slots):
+                    raise SafetyError("the device assigned duplicate internal slots; templates not restored")
             elif name in ("templatev10", "template"):
                 for row in rows:
-                    if "UID" in row and row.get("Pin") in uids:
-                        row["UID"] = uids[row["Pin"]]
+                    if "UID" in row and row.get("Pin") in slots:
+                        row["UID"] = slots[row["Pin"]]
                     dev.write_records(name, [row])
             else:
                 for row in rows:

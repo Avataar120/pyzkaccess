@@ -33,11 +33,11 @@ def test_wrong_password(emu):
 
 
 def test_user_lifecycle(dev):
-    dev.save_user(User(pin=101, name="Alice", password="4321", card_no=555))
-    dev.save_user(User(pin=101, name="Alice B."))  # rename only
+    dev.save_user(User(user_id=101, name="Alice", password="4321", card_no=555))
+    dev.save_user(User(user_id=101, name="Alice B."))  # rename only
     user = dev.get_user(101)
     assert (user.name, user.password, user.card_no) == ("Alice B.", "4321", 555)
-    assert user.uid == 1
+    assert user.slot == 1
     dev.grant(101)
     assert dev.get_authorizations(101)[0].door_mask == 1
     dev.delete_user(101)
@@ -45,28 +45,28 @@ def test_user_lifecycle(dev):
 
 
 def test_template_and_buffered_read(dev):
-    for pin in (1, 2, 3):
-        dev.save_user(User(pin=pin, name=f"user {pin}"))
-        dev.save_template(Template(pin=pin, template=bytes([pin]) * 500))
+    for uid in (1, 2, 3):
+        dev.save_user(User(user_id=uid, name=f"user {uid}"))
+        dev.save_template(Template(user_id=uid, template=bytes([uid]) * 500))
     tpls = dev.get_templates()  # > buffer_threshold: goes through the device buffer
-    assert [t.pin for t in tpls] == [1, 2, 3]
-    assert tpls[2].template == bytes([3]) * 500 and tpls[2].uid == 3 and tpls[2].size == 500
+    assert [t.user_id for t in tpls] == [1, 2, 3]
+    assert tpls[2].template == bytes([3]) * 500 and tpls[2].slot == 3 and tpls[2].size == 500
     assert dev.count("templatev10") == 3
     dev.delete_templates(2)
     assert dev.count("templatev10") == 2
 
 
-def test_template_refused_on_duplicate_uid(dev, emu):
-    dev.save_user(User(pin=1, name="a"))
-    dev.save_user(User(pin=2, name="b"))
+def test_template_refused_on_duplicate_slot(dev, emu):
+    dev.save_user(User(user_id=1, name="a"))
+    dev.save_user(User(user_id=2, name="b"))
     emu.state.data["user"][1]["UID"] = emu.state.data["user"][0]["UID"]
     with pytest.raises(SafetyError):
-        dev.save_template(Template(pin=2, template=b"x" * 10))
+        dev.save_template(Template(user_id=2, template=b"x" * 10))
 
 
 def test_template_needs_user(dev):
     with pytest.raises(SafetyError):
-        dev.save_template(Template(pin=9, template=b"x"))
+        dev.save_template(Template(user_id=9, template=b"x"))
 
 
 def test_wipe_needs_flag(dev):
@@ -76,9 +76,9 @@ def test_wipe_needs_flag(dev):
 
 
 def test_events_and_control(dev, emu):
-    emu.state.push_event(EventType.FINGERPRINT_OPEN, pin=100)
+    emu.state.push_event(EventType.FINGERPRINT_OPEN, user_id=100)
     recs = dev.poll()
-    assert isinstance(recs[0], AccessEvent) and recs[0].pin == 100
+    assert isinstance(recs[0], AccessEvent) and recs[0].user_id == 100
     dev.open_door(1, 3)
     assert emu.state.controls[-1] == (1, 1, 1, 3, 0)
     assert dev.poll()[0].event == EventType.REMOTE_OPENING
@@ -87,17 +87,17 @@ def test_events_and_control(dev, emu):
 
 def test_backup_restore(dev, emu):
     dev.write_records("timezone", [{"TimezoneId": 1, "SunTime1": 2359}])
-    for pin in (10, 20):
-        dev.save_user(User(pin=pin, name=f"n{pin}"))
-        dev.save_template(Template(pin=pin, template=bytes([pin]) * 50))
-        dev.grant(pin)
+    for uid in (10, 20):
+        dev.save_user(User(user_id=uid, name=f"n{uid}"))
+        dev.save_template(Template(user_id=uid, template=bytes([uid]) * 50))
+        dev.grant(uid)
     snap = backup.backup(dev)
     dev.delete_user(10)
     result = backup.restore(dev, snap, wipe=True)
     assert result["user"] == 2 and result["templatev10"] == 2
-    assert {t.pin: t.template for t in dev.get_templates()} == {10: bytes([10]) * 50, 20: bytes([20]) * 50}
-    users = {u.pin: u.uid for u in dev.get_users()}
-    assert {t.pin: t.uid for t in dev.get_templates()} == users
+    assert {t.user_id: t.template for t in dev.get_templates()} == {10: bytes([10]) * 50, 20: bytes([20]) * 50}
+    users = {u.user_id: u.slot for u in dev.get_users()}
+    assert {t.user_id: t.slot for t in dev.get_templates()} == users
 
 
 def test_reconnect_after_close(emu):
@@ -115,3 +115,44 @@ def test_backup_file_keeps_raw_bytes(dev, tmp_path):
     dev.delete_user(7)
     backup.restore(dev, backup.load(tmp_path / "b.json"))
     assert dev.get_user(7).name.encode("utf-8", "surrogateescape") == b"\xe9t\xe9"
+
+
+def test_light_template_read_and_move(dev):
+    from pyzkaccess_native import Template, User
+    for uid in (120, 123):
+        dev.save_user(User(user_id=uid, name="Alice"))
+    dev.save_template(Template(user_id=120, finger_id=0, template=b"A" * 40))
+    dev.save_template(Template(user_id=120, finger_id=1, template=b"B" * 40))
+    light = dev.get_templates(120, with_data=False)
+    assert [(t.finger_id, t.template, t.size) for t in light] == [(0, b"", 40), (1, b"", 40)]
+    slot = dev.move_template(120, 1, 123)
+    assert slot == 0
+    assert [t.template for t in dev.get_templates(123)] == [b"B" * 40]
+    assert [t.finger_id for t in dev.get_templates(120)] == [0]
+
+
+def test_revoke_returns_and_restores(dev):
+    from pyzkaccess_native import User
+    dev.save_user(User(user_id=5, name="x"))
+    dev.grant(5, 1, 1)
+    removed = dev.revoke(5)
+    assert dev.get_authorizations(5) == [] and len(removed) == 1
+    dev.restore_authorizations(removed)
+    assert dev.get_authorizations(5)[0].timezone_id == 1
+
+
+def test_door_settings(dev):
+    from pyzkaccess_native import DoorSettings
+    s = dev.get_door_settings(1)
+    assert s.relay_seconds == 5 and s.close_and_lock == 1
+    dev.set_door_settings(DoorSettings(door=1, relay_seconds=3))
+    assert dev.get_door_settings(1).relay_seconds == 3
+
+
+def test_deprecated_aliases():
+    import warnings
+    from pyzkaccess_native import User
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        assert User(user_id=7, slot=2).pin == 7 and User(user_id=7, slot=2).uid == 2
+    assert any(issubclass(x.category, DeprecationWarning) for x in w)

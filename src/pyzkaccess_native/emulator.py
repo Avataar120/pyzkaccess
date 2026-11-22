@@ -55,6 +55,8 @@ class DeviceState:
             "~SerialNumber": "EMU0000000001", "FirmVer": "Emulator 1.0", "MachineType": "101",
             "LockCount": "1", "ReaderCount": "1", "AuxInCount": "0", "AuxOutCount": "1",
             "IPAddress": "127.0.0.1", "~ZKFPVersion": "10", "~MaxUserCount": "300",
+            "Door1Drivertime": "5", "Door1SensorType": "0", "Door1Detectortime": "15",
+            "Door1VerifyType": "0", "Door1KeepOpenTimeZone": "0", "Door1CloseAndLock": "1",
         }
         self.password = password
         self.buffer_threshold = buffer_threshold
@@ -66,10 +68,10 @@ class DeviceState:
         self.next_uid = 1
 
     # -- helpers used by tests ----------------------------------------------
-    def push_event(self, event: int, pin: int = 0, card: int = 0, door: int = 1,
+    def push_event(self, event: int, user_id: int = 0, card: int = 0, door: int = 1,
                    verify: int = 1, in_out: int = 0) -> None:
         stamp = codec.encode_datetime(datetime.now())
-        self.pending_events.append(card.to_bytes(4, "little") + pin.to_bytes(4, "little")
+        self.pending_events.append(card.to_bytes(4, "little") + user_id.to_bytes(4, "little")
                                    + bytes([verify, door, event, in_out]) + stamp.to_bytes(4, "little"))
 
     def table_by_index(self, index: int) -> Table:

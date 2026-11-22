@@ -90,22 +90,22 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--json", action="store_true")
 
     s = sub.add_parser("user-set", help="create or update a user (other fields are kept)")
-    s.add_argument("pin", type=int)
+    s.add_argument("user_id", type=int, help="UserID")
     s.add_argument("--name")
     s.add_argument("--card", type=int)
     s.add_argument("--user-password", dest="user_password", help="keypad password of the user")
 
     s = sub.add_parser("user-delete", help="delete a user with its templates and authorizations")
-    s.add_argument("pin", type=int)
+    s.add_argument("user_id", type=int, help="UserID")
     s.add_argument("--yes", action="store_true", help="do not ask for confirmation")
 
     s = sub.add_parser("grant", help="authorize a user on doors")
-    s.add_argument("pin", type=int)
+    s.add_argument("user_id", type=int, help="UserID")
     s.add_argument("--timezone", type=int, default=1)
     s.add_argument("--doors", type=int, default=1, help="door bit mask (1, 2, 4, 8)")
 
     s = sub.add_parser("revoke", help="remove every authorization of a user")
-    s.add_argument("pin", type=int)
+    s.add_argument("user_id", type=int, help="UserID")
 
     s = sub.add_parser("backup", help="save configuration tables to a JSON file")
     s.add_argument("file")
@@ -180,18 +180,21 @@ def run(args: argparse.Namespace) -> int:
         elif cmd == "count":
             print(dev.count(args.table))
         elif cmd == "users":
-            _print_rows([u.to_row() for u in dev.get_users()], args.json)
+            rows = [{"UserID": u.user_id, "Name": u.name, "Card": u.card_no or "",
+                     "Code": "yes" if u.password else "", "Slot": u.slot} for u in dev.get_users()]
+            _print_rows(rows, args.json)
         elif cmd == "user-set":
-            user = dev.save_user(User(args.pin, name=args.name, card_no=args.card, password=args.user_password))
-            _print_rows([user.to_row()], False)
+            user = dev.save_user(User(args.user_id, name=args.name, card_no=args.card, password=args.user_password))
+            _print_rows([{"UserID": user.user_id, "Name": user.name, "Card": user.card_no or "",
+                          "Code": "yes" if user.password else "", "Slot": user.slot}], False)
         elif cmd == "user-delete":
-            if not _confirm(f"Delete user {args.pin}, its templates and authorizations?", args.yes):
+            if not _confirm(f"Delete user {args.user_id}, its templates and authorizations?", args.yes):
                 return 1
-            dev.delete_user(args.pin)
+            dev.delete_user(args.user_id)
         elif cmd == "grant":
-            dev.grant(args.pin, args.timezone, args.doors)
+            dev.grant(args.user_id, args.timezone, args.doors)
         elif cmd == "revoke":
-            dev.revoke(args.pin)
+            dev.revoke(args.user_id)
         elif cmd == "backup":
             snap = backup_mod.backup(dev, include_logs=args.logs)
             backup_mod.save(snap, args.file)
@@ -209,7 +212,7 @@ def run(args: argparse.Namespace) -> int:
                         d = {k: _jsonable(v) for k, v in vars(rec).items() if k != "raw"}
                         print(json.dumps(d), flush=True)
                     elif isinstance(rec, AccessEvent):
-                        print(f"{rec.time}  door {rec.door}  pin {rec.pin:<6} card {rec.card:<10} "
+                        print(f"{rec.time}  door {rec.door}  user {rec.user_id:<6} card {rec.card:<10} "
                               f"{int(rec.event):3} {rec.label}", flush=True)
                     else:
                         print(f"{rec.time}  status  sensors {[int(s) for s in rec.sensors]} "

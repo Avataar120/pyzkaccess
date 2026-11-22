@@ -169,9 +169,10 @@ Size=822   UID=1   Pin=100 Finger=0 Valid=1  Template          Resverd=0 EndTag=
 - Writing `timezone`, `templatev10` and `userauthorize` this way is verified, as well as `user`.
 - Several records in one `07` frame: [assumed], not tested. The library sends one per frame.
 
-#### UID allocation
+#### Internal slot (`UID`) allocation
 
-`UID` is an internal id that links a user and its templates. **The device ignores the UID
+`UID` is an internal slot number that links a user and its templates (the library calls it
+`slot`; the user's number, typed on the keypad, is the **UserID**, stored in the field `Pin`). **The device ignores the UID
 sent in a `user` write and allocates one itself** **[verified]**. On a device that had seen
 many deletions, newly created users received UIDs **already used by other users** **[verified]**.
 A template written for the new user would then share its UID with another person.
@@ -224,7 +225,7 @@ The answer is a sequence of 16-byte records **[verified]**:
 | Bytes | Access event | Door/alarm status (code 255) |
 |---|---|---|
 | 0-3 | card number (LE) | alarm state, one byte per door |
-| 4-7 | user PIN (LE) | door sensor, one byte per door (0 none, 1 closed, 2 open) |
+| 4-7 | UserID (LE) | door sensor, one byte per door (0 none, 1 closed, 2 open) |
 | 8 | verification mode | |
 | 9 | door number | |
 | 10 | event code | 255 |
@@ -253,8 +254,8 @@ Verified on the reference device:
 
 | Request | `05` data | Real-time log |
 |---|---|---|
-| open door 1 for 1 s | `01 01 01 01 00` | event **8** (remote opening), PIN 0, door 1, verify mode 200, in/out 2 |
-| cancel alarm | `02 00 00 00 00` | event **7** (cancel alarm), PIN 0, door 0, verify mode 200 |
+| open door 1 for 1 s | `01 01 01 01 00` | event **8** (remote opening), UserID 0, door 1, verify mode 200, in/out 2 |
+| cancel alarm | `02 00 00 00 00` | event **7** (cancel alarm), UserID 0, door 0, verify mode 200 |
 
 Reboot and the normal-open state were not tested.
 

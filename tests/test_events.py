@@ -7,7 +7,7 @@ def test_status_and_event():
     status = bytes.fromhex("00000000" "01000000" "00" "00" "ff" "00" "84d38333")
     recs = parse_rtlog(event + status)
     assert isinstance(recs[0], AccessEvent)
-    assert recs[0].pin == 100 and recs[0].event == EventType.FINGERPRINT_OPEN
+    assert recs[0].user_id == 100 and recs[0].event == EventType.FINGERPRINT_OPEN
     assert recs[0].verify_mode == VerifyMode.FINGERPRINT and recs[0].granted
     assert isinstance(recs[1], DoorStatus)
     assert recs[1].sensors[0] == DoorSensor.CLOSED and recs[1].door_open(1) is False

@@ -18,7 +18,7 @@ MA500...) speak a binary TCP protocol. The only official way to use it is the Pu
 (`plcommpro.dll`), a 32-bit Windows DLL. This project reimplements that protocol from
 scratch, from captures of the DLL's own traffic, so you can:
 
-- read and manage **users, RFID cards, PIN codes and fingerprint templates**;
+- read and manage **users, RFID cards, keypad codes and fingerprint templates**;
 - grant and revoke **door access**;
 - receive **access events in real time** (who opened which door, refused attempts...);
 - **open doors**, drive auxiliary outputs, set the clock, read and write parameters;
@@ -88,10 +88,10 @@ with ZKAccess("192.168.1.201") as dev:          # password="..." if one is set
     print(info.serial_number, info.firmware)
 
     for user in dev.get_users():
-        print(user.pin, user.name, user.card_no)
+        print(user.user_id, user.name, user.card_no)
 
     for event in dev.events():                  # Ctrl+C to stop
-        print(event.time, event.pin, event.label, "granted" if event.granted else "")
+        print(event.time, event.user_id, event.label, "granted" if event.granted else "")
 ```
 
 From a shell:
@@ -136,6 +136,10 @@ dev.set_time()               # sync with this computer (or pass a datetime)
 
 ### Users
 
+> **Vocabulary.** A user is identified by its **UserID**, the number typed on the keypad
+> (stored by the device in a field called `Pin`). The device also gives each user an internal
+> **slot** (field `UID`) that binds fingerprint templates to their owner; it cannot be chosen.
+
 ```python
 from pyzkaccess_native import User
 
@@ -143,14 +147,14 @@ dev.get_users()                                  # list[User]
 dev.get_user(105)                                # User | None
 
 # Create, or update only the given fields (the others are kept):
-dev.save_user(User(pin=105, name="Alice", card_no=12345678, password="1234"))
-dev.save_user(User(pin=105, name="Alice Smith"))  # rename, card and password kept
+dev.save_user(User(user_id=105, name="Alice", card_no=12345678, password="1234"))
+dev.save_user(User(user_id=105, name="Alice Smith"))  # rename, card and password kept
 
 dev.delete_user(105)       # also deletes its fingerprint templates and authorizations
 ```
 
-`User` fields: `pin`, `name`, `card_no`, `password`, `group`, `start_time`, `end_time`,
-`privilege`, `super_authorize`, and `uid` (read-only, assigned by the device).
+`User` fields: `user_id`, `name`, `card_no`, `password` (keypad code), `group`, `start_time`,
+`end_time`, `privilege`, `super_authorize`, and `slot` (read-only, see below).
 
 ### Door access
 
@@ -173,16 +177,16 @@ The library can copy, back up and restore the resulting templates:
 from pyzkaccess_native import Template
 
 templates = dev.get_templates()          # all of them (large transfer handled for you)
-mine = dev.get_templates(pin=105)
+mine = dev.get_templates(user_id=105)
 
 # Copy a template to another device (the user must exist there):
-other.save_user(User(pin=105, name="Alice"))
-other.save_template(Template(pin=105, finger_id=0, template=mine[0].template))
+other.save_user(User(user_id=105, name="Alice"))
+other.save_template(Template(user_id=105, finger_id=0, template=mine[0].template))
 
 dev.delete_templates(105)                # or delete_templates(105, finger_id=3)
 ```
 
-`save_template()` refuses to write when another user has the same internal UID (see
+`save_template()` refuses to write when another user has the same internal slot (see
 [safety notes](#safety-notes-read-this)).
 
 ### Real-time events
@@ -192,7 +196,7 @@ from pyzkaccess_native import AccessEvent, EventType
 
 for ev in dev.events(interval=0.5):      # reconnects automatically
     if ev.granted:
-        print(f"{ev.pin} opened door {ev.door} ({ev.label})")
+        print(f"{ev.user_id} opened door {ev.door} ({ev.label})")
     elif ev.event == EventType.UNREGISTERED_FINGERPRINT:
         print("unknown finger")
 ```
@@ -200,7 +204,7 @@ for ev in dev.events(interval=0.5):      # reconnects automatically
 Or poll yourself: `dev.poll()` returns the records received since the previous call:
 `AccessEvent` objects, plus a `DoorStatus` (door sensors, alarms) on every call.
 
-`AccessEvent` has `event` (an `EventType`, or a plain `int` for unlisted codes), `pin`,
+`AccessEvent` has `event` (an `EventType`, or a plain `int` for unlisted codes), `user_id`,
 `card`, `door`, `verify_mode`, `in_out`, `time`, plus the helpers `granted`, `denied` and
 `label`.
 
@@ -273,9 +277,9 @@ zkaccess [--host HOST] [--port 4370] [--password PWD] [-v|-vv] <command>
 | `params NAME... / NAME=VALUE...` | read / write parameters |
 | `time [--set [ISO date]]` | read, or set the clock (default: now) |
 | `users [--json]` | list users |
-| `user-set PIN [--name] [--card] [--user-password]` | create or update a user |
-| `user-delete PIN [--yes]` | delete a user, its templates and authorizations |
-| `grant PIN [--timezone 1] [--doors 1]` / `revoke PIN` | door access |
+| `user-set USERID [--name] [--card] [--user-password]` | create or update a user |
+| `user-delete USERID [--yes]` | delete a user, its templates and authorizations |
+| `grant USERID [--timezone 1] [--doors 1]` / `revoke USERID` | door access |
 | `read TABLE [--where F=V] [--fields a,b] [--json]` | dump any table |
 | `count TABLE` | number of records |
 | `events [--status] [--json]` | live events, Ctrl+C to stop |
@@ -292,11 +296,11 @@ Example:
 ```console
 $ export ZKACCESS_HOST=192.168.1.201
 $ zkaccess users
-Pin  Name   CardNo    Password  Group  StartTime  EndTime  Privilege  SuperAuthorize  UID
-101  Alice  12345678            0      0          0        0          0               1
+UserID  Name   Card      Code  Slot
+101     Alice  12345678  yes   1
 $ zkaccess events
-2026-11-21 08:02:11  door 1  pin 101    card 0          14 Fingerprint open
-2026-11-21 08:05:40  door 1  pin 0      card 0          34 Unregistered fingerprint
+2026-11-21 08:02:11  door 1  user 101   card 0          14 Fingerprint open
+2026-11-21 08:05:40  door 1  user 0     card 0          34 Unregistered fingerprint
 ```
 
 ## Home Assistant integration
@@ -400,8 +404,8 @@ against each of them, but you should know them:
    password and the card number. → `save_user()` reads the record and merges first.
 2. **Deleting without a condition erases the whole table.** → `delete_records()` refuses
    unless you pass `allow_wipe=True`.
-3. **Some firmware give a new user a UID that another user already has.** Templates are
-   bound to the UID, so a template written then could identify the wrong person.
+3. **Some firmware give a new user an internal slot that another user already has.**
+   Templates are bound to that slot, so a template written then could identify the wrong person.
    → `save_template()` checks for duplicates and refuses.
 4. **Deleting a user does not delete its templates or its door rights.**
    → `delete_user()` cascades by default.
@@ -431,12 +435,12 @@ from pyzkaccess_native.emulator import Emulator
 
 def test_something():
     with Emulator() as emu, ZKAccess("127.0.0.1", emu.port) as dev:
-        emu.state.push_event(14, pin=1)        # simulate a fingerprint
-        assert dev.poll()[0].pin == 1
+        emu.state.push_event(14, user_id=1)        # simulate a fingerprint
+        assert dev.poll()[0].user_id == 1
 ```
 
 The emulator reproduces the behaviour observed on real devices (whole-record writes,
-device-assigned UIDs, buffered transfers...), but the real device remains the reference.
+device-assigned slots, buffered transfers...), but the real device remains the reference.
 
 ## Troubleshooting
 

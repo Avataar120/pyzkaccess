@@ -48,7 +48,7 @@ async def test_entities_events_services(hass: HomeAssistant, emulator):
                                            blocking=True, return_response=True)
     assert users["users"][0]["name"] == "Alice"
 
-    emulator.state.push_event(14, pin=101)
+    emulator.state.push_event(14, user_id=101)
     await entry.runtime_data.async_refresh()
     await hass.async_block_till_done()
     assert events[-1].data["pin"] == 101 and events[-1].data["granted"]
