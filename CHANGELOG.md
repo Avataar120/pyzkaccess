@@ -17,6 +17,9 @@
   contact is wired; buttons use the same connection path as everything else; errors are
   translated (English, French).
 - Panel: "Device relay" renamed "Reader opens its lock", with an explanation.
+- Home Assistant integration: a refusal for lack of rights (event 23, a category without the
+  device lock) gives the real method (fingerprint, card or code, deduced from the UserID's
+  credentials) instead of "other": the MA500 sends no verify mode for it.
 - Blueprints: run actions for a category, open and disarm, lock and arm when leaving, alert
   on repeated refusals (`blueprints/automation/zkaccess_native`).
 - Emulator: `DeviceState.door_sensors` sets the door contacts of the status record.

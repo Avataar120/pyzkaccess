@@ -314,9 +314,24 @@ class ZKCoordinator(DataUpdateCoordinator[ZKData]):
             result = RESULT_DENIED  # second presentation / toggle led to a category switched off
         return self._event(result=result, code=code, event_name=ev.label, user_id=ev.user_id, who=who,
                            digit=digit, cat=cat, gesture=gesture, toggled=toggled,
-                           method=access_method(ev), card=ev.card or None, door=ev.door,
+                           method=self._method(ev), card=ev.card or None, door=ev.door,
                            verify_mode=int(ev.verify_mode),
                            when=ev.time.isoformat() if ev.time else None)
+
+    def _method(self, ev: AccessEvent) -> str:
+        """How the person was identified. A refusal for lack of rights (event 23) comes with
+        verify mode 0 on the MA500: the method is then deduced from the credentials the
+        UserID has (a card in the event; otherwise its only kind of credential)."""
+        method = access_method(ev)
+        if method != "other" or not ev.user_id:
+            return method
+        cred = next((c for p in (self.snapshot or {}).get("persons", []) for c in p["categories"]
+                     if c["user_id"] == ev.user_id), None)
+        if cred is None:
+            return method
+        kinds = [k for k, has in (("fingerprint", bool(cred["fingers"])), ("card", bool(cred["card"])),
+                                  ("code", bool(cred["has_code"]))) if has]
+        return kinds[0] if len(kinds) == 1 else method
 
     def _resolve(self, digit: Optional[int], cat: Optional[dict[str, Any]], result: str,
                  repeat_key: Any, when: Optional[float] = None) -> tuple[Optional[int], Optional[dict[str, Any]], str, bool]:

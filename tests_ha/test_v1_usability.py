@@ -146,3 +146,16 @@ async def test_door_entities_enabled_with_sensor(hass: HomeAssistant, emulator, 
     ent = er.async_get(hass)
     entity_id = ent.async_get_entity_id("binary_sensor", DOMAIN, "EMU0000000001_door_1")
     assert ent.async_get(entity_id).disabled_by is None
+
+
+async def test_method_deduced_for_refusal_without_rights(hass: HomeAssistant, emulator, entry):
+    from pytest_homeassistant_custom_component.common import async_capture_events
+    with ZKAccess("127.0.0.1", emulator.port) as dev:
+        dev.save_template(Template(user_id=128, finger_id=0, template=b"G" * 32))
+    coord = entry.runtime_data
+    await coord.async_refresh_snapshot(silent=True)
+    events = async_capture_events(hass, EVENT_ACCESS)
+    emulator.state.push_event(23, user_id=128, verify=0)    # MA500: no verify mode for event 23
+    await coord.async_refresh()
+    await hass.async_block_till_done()
+    assert events[-1].data["result"] == "action" and events[-1].data["method"] == "fingerprint"
