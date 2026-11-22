@@ -52,9 +52,10 @@ SCHEMAS = {
 def _coordinator(hass: HomeAssistant, device_id: str) -> ZKCoordinator:
     device = dr.async_get(hass).async_get(device_id)
     if device:
-        for entry_id in device.config_entries:
-            entry = hass.config_entries.async_get_entry(entry_id)
-            if entry and entry.domain == DOMAIN and hasattr(entry, "runtime_data"):
+        # Matched by the device identifier (the entry's serial number), not by the deprecated
+        # DeviceEntry.config_entries.
+        for entry in hass.config_entries.async_loaded_entries(DOMAIN):
+            if (DOMAIN, entry.unique_id) in device.identifiers and hasattr(entry, "runtime_data"):
                 return entry.runtime_data
     raise ServiceValidationError(translation_domain=DOMAIN, translation_key="not_loaded",
                                  translation_placeholders={"device": device_id})
