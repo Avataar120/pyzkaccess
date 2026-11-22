@@ -26,6 +26,8 @@
   places it on the hand and offers to delete it; meanwhile the reader's events run no
   automation. A UserID with several fingerprints is separated for a moment on temporary
   UserIDs (9990-9999) without rights, then restored and checked (also after a restart).
+- Home Assistant integration: the reader polling interval can be set in the panel's
+  Settings (0.3 to 3 s; also in the integration options) and applies without a reload.
 
 ## 0.3.0 - 2026-11-22
 

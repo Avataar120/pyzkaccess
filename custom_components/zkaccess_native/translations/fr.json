@@ -28,7 +28,7 @@
       "init": {
         "title": "Options",
         "data": {
-          "poll_interval": "Intervalle d'interrogation du journal temps réel (s)",
+          "poll_interval": "Intervalle d'interrogation du journal temps réel (s, 0,3 à 3)",
           "open_seconds": "Durée d'ouverture de la porte (s)",
           "sync_clock": "Mettre l'appareil à l'heure à la connexion"
         }

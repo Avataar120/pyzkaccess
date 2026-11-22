@@ -301,3 +301,22 @@ async def test_identify_restored_after_restart(hass: HomeAssistant, emulator, se
     with ZKAccess("127.0.0.1", emulator.port) as dev:
         assert sorted((t.user_id, t.finger_id) for t in dev.get_templates()) == [(120, 0), (120, 2)]
         assert [u.user_id for u in dev.get_users() if u.user_id >= 9990] == []
+
+
+async def test_poll_interval_setting(hass: HomeAssistant, emulator, setup):
+    entry, call = setup
+    coord = entry.runtime_data
+    assert (await call("state"))["settings"]["poll_interval"] == 1.0
+    await call("settings/save", poll_interval=0.3)
+    await hass.async_block_till_done()
+    assert entry.runtime_data is coord                  # applied live, no reload
+    assert coord.update_interval.total_seconds() == 0.3
+    assert entry.options["poll_interval"] == 0.3
+    assert (await call("state"))["settings"]["poll_interval"] == 0.3
+    await call("settings/save", poll_interval=3)
+    await hass.async_block_till_done()
+    assert coord.update_interval.total_seconds() == 3
+    for bad in (0.2, 3.5):                              # out of range: refused
+        with pytest.raises(AssertionError):
+            await call("settings/save", poll_interval=bad)
+    assert coord.update_interval.total_seconds() == 3

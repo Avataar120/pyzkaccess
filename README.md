@@ -375,7 +375,7 @@ Disabling a person also disables their phones; each phone can also be disabled o
 | **People** | list, search, create; per person: a two-hand view of enrolled fingers with their category, move a finger to another category, delete it; cards and codes per category; paired phones; enable / disable all access (rights are remembered and restored); link to a Home Assistant person; delete. UserIDs that do not follow the numbering (e.g. enrolled on the keypad) are listed as **Unassigned** and can be attached to a person. |
 | **Activity** | live log with names, category, method (fingerprint, card, code, remote) and second presentations; filters; unknown cards can be assigned in one click |
 | **Door** | open / hold open / close the lock relay; door settings written to the device (relay time, door sensor, open-door alarm delay, verification mode, free-passage time zone, relock on close); device clock; cancel alarm |
-| **Settings** | numbering, action categories (incl. toggle), second-presentation delay, NFC tags for phones, automatic backups (on every change, nightly, retention), download / restore / import, keypad notifications |
+| **Settings** | numbering, action categories (incl. toggle), second-presentation delay, NFC tags for phones, automatic backups (on every change, nightly, retention), download / restore / import, keypad notifications, reader polling interval (0.3 to 3 s, applied live) |
 
 **Enrolling a fingerprint.** Fingerprints are captured by the device itself (there is no
 remote enrollment command). Click a free finger on the hand, pick its category: the page
@@ -431,7 +431,7 @@ Every access event is also fired on the bus as **`zkaccess_native_access`** with
 Actions: `zkaccess_native.set_user`, `delete_user`, `grant`, `revoke`, `open_door`,
 `sync_clock`, `list_users` (returns the users) and `backup`.
 
-Options: polling interval (default 1 s), door open duration, clock sync on connection.
+Options: polling interval (default 1 s, 0.3 to 3 s), door open duration, clock sync on connection.
 The device clock is also synced every night at 04:00.
 
 **Diagnostics** can be downloaded from the device page (personal data, card numbers, names

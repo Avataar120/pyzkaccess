@@ -9,8 +9,9 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
-from .const import DOMAIN, NUMBERING_CATEGORY, NUMBERING_PLAIN
-from .coordinator import ZKCoordinator, signal_changed, signal_event
+from .const import (CONF_POLL_INTERVAL, DOMAIN, NUMBERING_CATEGORY, NUMBERING_PLAIN, POLL_INTERVAL_MAX,
+                    POLL_INTERVAL_MIN)
+from .coordinator import ZKCoordinator, poll_interval, signal_changed, signal_event
 
 ENTRY = vol.Required("entry_id")
 
@@ -44,7 +45,8 @@ def _state(coord: ZKCoordinator) -> dict[str, Any]:
         "second_window": coord.store.data.get("second_window", 3.0),
         "numbering": coord.store.data["numbering"],
         "settings": {"backup": coord.store.data["backup"],
-                     "notify_keypad": coord.store.data.get("notify_keypad", True)},
+                     "notify_keypad": coord.store.data.get("notify_keypad", True),
+                     "poll_interval": poll_interval(coord.config_entry.options)},
         "enrollment": coord.enrollment,
         "tags": coord.store.data["tags"],
         "phone_pairing": coord.phone_pairing and {k: v for k, v in coord.phone_pairing.items() if k != "until"},
@@ -457,11 +459,17 @@ async def ws_backup_import(hass, connection, msg) -> None:
                                   vol.Optional("backup"): {vol.Optional("on_change"): bool,
                                                            vol.Optional("nightly"): bool,
                                                            vol.Optional("keep"): vol.All(int, vol.Range(1, 500))},
-                                  vol.Optional("notify_keypad"): bool})
+                                  vol.Optional("notify_keypad"): bool,
+                                  vol.Optional("poll_interval"): vol.All(vol.Coerce(float),
+                                                                         vol.Range(POLL_INTERVAL_MIN, POLL_INTERVAL_MAX))})
 @websocket_api.require_admin
 @callback
 def ws_settings_save(hass, connection, msg) -> None:
     coord = _coordinator(hass, msg["entry_id"])
+    if "poll_interval" in msg:
+        entry = coord.config_entry
+        hass.config_entries.async_update_entry(
+            entry, options={**entry.options, CONF_POLL_INTERVAL: round(msg["poll_interval"], 2)})
     if "backup" in msg:
         coord.store.data["backup"].update(msg["backup"])
     if "notify_keypad" in msg:

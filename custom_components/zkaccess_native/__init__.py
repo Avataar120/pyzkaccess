@@ -109,6 +109,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ZKConfigEntry) -> bool:
 
 
 async def _reload(hass: HomeAssistant, entry: ZKConfigEntry) -> None:
+    # A new poll interval is applied live; other option changes need a reload.
+    if entry.runtime_data.apply_options(dict(entry.options)):
+        return
     await hass.config_entries.async_reload(entry.entry_id)
 
 

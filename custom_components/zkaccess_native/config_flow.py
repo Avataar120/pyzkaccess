@@ -10,7 +10,8 @@ from homeassistant.core import callback
 from pyzkaccess_native import DeviceError, ZKAccess, ZKError
 
 from .const import (CONF_OPEN_SECONDS, CONF_POLL_INTERVAL, CONF_SYNC_CLOCK, DEFAULT_OPEN_SECONDS,
-                    DEFAULT_POLL_INTERVAL, DEFAULT_PORT, DEFAULT_SYNC_CLOCK, DOMAIN)
+                    DEFAULT_POLL_INTERVAL, DEFAULT_PORT, DEFAULT_SYNC_CLOCK, DOMAIN, POLL_INTERVAL_MAX,
+                    POLL_INTERVAL_MIN)
 
 
 def _probe(host: str, port: int, password: str):
@@ -59,7 +60,7 @@ class ZKAccessOptionsFlow(OptionsFlow):
         opts = self.config_entry.options
         return self.async_show_form(step_id="init", data_schema=vol.Schema({
             vol.Required(CONF_POLL_INTERVAL, default=opts.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL)):
-                vol.All(vol.Coerce(float), vol.Range(min=0.2, max=60)),
+                vol.All(vol.Coerce(float), vol.Range(min=POLL_INTERVAL_MIN, max=POLL_INTERVAL_MAX)),
             vol.Required(CONF_OPEN_SECONDS, default=opts.get(CONF_OPEN_SECONDS, DEFAULT_OPEN_SECONDS)):
                 vol.All(int, vol.Range(min=1, max=254)),
             vol.Required(CONF_SYNC_CLOCK, default=opts.get(CONF_SYNC_CLOCK, DEFAULT_SYNC_CLOCK)): bool,

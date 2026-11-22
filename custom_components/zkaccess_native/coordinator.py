@@ -6,7 +6,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import timedelta
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Optional, TypeVar
+from typing import Any, Awaitable, Callable, Mapping, Optional, TypeVar
 
 from homeassistant.components import persistent_notification
 from homeassistant.config_entries import ConfigEntry
@@ -25,7 +25,7 @@ from pyzkaccess_native.events import DENIED_EVENTS, GRANTED_EVENTS
 
 from .const import (CONF_OPEN_SECONDS, CONF_POLL_INTERVAL, CONF_SYNC_CLOCK, DEFAULT_OPEN_SECONDS,
                     DEFAULT_POLL_INTERVAL, DEFAULT_SYNC_CLOCK, DOMAIN, ENROLL_TIMEOUT_SECONDS,
-                    EVENT_ACCESS, IDENTIFY_TIMEOUT_SECONDS, PANEL_URL, PHONE_PAIR_TIMEOUT_SECONDS, TOGGLE_INACTIVE_STATES,
+                    EVENT_ACCESS, IDENTIFY_TIMEOUT_SECONDS, PANEL_URL, POLL_INTERVAL_MAX, POLL_INTERVAL_MIN, PHONE_PAIR_TIMEOUT_SECONDS, TOGGLE_INACTIVE_STATES,
                     RESULT_ACTION, RESULT_DENIED, RESULT_GRANTED, RESULT_OTHER,
                     RETRY_MAX_SECONDS, RETRY_MIN_SECONDS, SNAPSHOT_REFRESH_SECONDS)
 from .manager import AccessManager
@@ -39,6 +39,12 @@ UNKNOWN_CREDENTIAL = {27, 34}
 FINGERPRINT_EVENTS = {14, 15, 16, 17, 18, 19, 31, 32, 33, 34, 35, 103, 203}
 CODE_EVENTS = {4, 30, 101}
 REMOTE_EVENTS = {7, 8, 9, 10, 11, 12, 13, 205}
+
+
+def poll_interval(options: Mapping[str, Any]) -> float:
+    """The configured poll interval, kept within the supported range."""
+    value = float(options.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL))
+    return min(max(value, POLL_INTERVAL_MIN), POLL_INTERVAL_MAX)
 
 
 def signal_event(entry_id: str) -> str:
@@ -75,9 +81,10 @@ class ZKCoordinator(DataUpdateCoordinator[ZKData]):
     config_entry: ConfigEntry
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry, store: AccessStore) -> None:
-        interval = entry.options.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL)
+        interval = poll_interval(entry.options)
         super().__init__(hass, _LOGGER, name=DOMAIN, config_entry=entry,
                          update_interval=timedelta(seconds=interval), always_update=False)
+        self.live_options: dict[str, Any] = dict(entry.options)
         self.client = ZKAccess(entry.data[CONF_HOST], entry.data.get(CONF_PORT, 4370),
                                entry.data.get(CONF_PASSWORD, ""))
         self.store = store
@@ -463,6 +470,17 @@ class ZKCoordinator(DataUpdateCoordinator[ZKData]):
         self.enrollment = {"user_id": user_id, "baseline": baseline, "physical": physical,
                            "state": "waiting", "started": time.monotonic()}
         return self.enrollment
+
+    def apply_options(self, options: dict[str, Any]) -> bool:
+        """Apply changed options live when possible (only the poll interval can be).
+        False when Home Assistant must reload the entry."""
+        changed = {k for k in set(options) | set(self.live_options)
+                   if options.get(k) != self.live_options.get(k)}
+        if changed - {CONF_POLL_INTERVAL}:
+            return False
+        self.update_interval = timedelta(seconds=poll_interval(options))
+        self.live_options = dict(options)
+        return True
 
     # ----------------------------------------------------------- identification
     def start_identify(self, person: Optional[int], physical: Optional[int]) -> dict[str, Any]:

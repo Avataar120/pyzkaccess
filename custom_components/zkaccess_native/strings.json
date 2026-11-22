@@ -28,7 +28,7 @@
       "init": {
         "title": "Options",
         "data": {
-          "poll_interval": "Real-time log polling interval (s)",
+          "poll_interval": "Real-time log polling interval (s, 0.3 to 3)",
           "open_seconds": "Door open duration (s)",
           "sync_clock": "Set the device clock on connection"
         }

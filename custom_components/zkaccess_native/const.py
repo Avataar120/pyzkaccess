@@ -9,6 +9,8 @@ CONF_SYNC_CLOCK = "sync_clock"
 
 DEFAULT_PORT = 4370
 DEFAULT_POLL_INTERVAL = 1.0  # seconds between two real-time log polls
+POLL_INTERVAL_MIN = 0.3
+POLL_INTERVAL_MAX = 3.0
 DEFAULT_OPEN_SECONDS = 5
 DEFAULT_SYNC_CLOCK = True
 
