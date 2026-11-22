@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- README: supported devices made explicit (PullSDK / ZKAccess access control devices; time
+  attendance terminals such as MA300, F22, SpeedFace use another protocol), with a quick check.
 - README: security advice, do not wire the door lock to the relay of a reader mounted
   outside (tearing it off would expose the wires); keep the lock relay indoors and let Home
   Assistant open the door.

@@ -57,15 +57,24 @@ It comes with:
 
 ## Supported devices
 
-Any device that ZKAccess / the PullSDK can manage *should* work, since they share the
-protocol.
+This library and integration speak the **PullSDK / ZKAccess protocol** of ZKTeco
+*access control* devices: the one the ZKAccess 3.5 software uses (TCP port 4370, tables
+`user`, `templatev10`, `userauthorize`, real-time log). Any device that ZKAccess 3.5 can
+manage *should* work.
 
 | Device | Status |
 |---|---|
-| **MA500** (fingerprint + RFID reader), firmware 6.64 | ✅ tested (reboot and normal-open state excepted) |
-| C3-100 / C3-200 / C3-400 | 🟡 expected to work (same protocol); please report |
-| inBio 160/260/460 | 🟡 expected to work; please report |
-| Push-protocol / "standalone attendance" devices (`pyzk`, port 4370 UDP) | ❌ different protocol |
+| **MA500** (fingerprint + RFID reader), firmware 6.64 | ✅ tested, used daily (fingerprints, cards, codes, phones) |
+| C3-100 / C3-200 / C3-400 (access control panels) | 🟡 expected to work (same protocol, cards and codes; C3 panels have no fingerprint); please report |
+| inBio 160 / 260 / 460 (access control panels with fingerprint readers) | 🟡 expected to work; please report |
+| **Time attendance terminals and standalone units** using the "attendance" protocol (`pyzk`): MA300, SCR100, F18, F22, K40, iClock, uFace, SpeedFace... | ❌ not supported: different protocol |
+| Devices that only push their events to a server (ADMS / "push" protocol) | ❌ not supported |
+
+**How to tell?** If the device is managed by **ZKAccess 3.5** (access control software), it
+uses this protocol. If it is managed by **ZKTime / ZKBio Time / Attendance Management**
+(time attendance software), it uses the other one. A quick check from any computer:
+`pip install pyzkaccess-native` then `zkaccess --host <device IP> info`. An answer with a
+serial number means it speaks this protocol.
 
 If you try another model, please open an issue with the output of `zkaccess info` and
 `zkaccess tables`: it helps a lot.
