@@ -79,27 +79,51 @@ class ZKAccessConfigFlow(ConfigFlow, domain=DOMAIN):
     def __init__(self) -> None:
         self._found: list[DiscoveredDevice] = []
         self._host: str | None = None
+        self._empty_search: list[str] | None = None
+
+    def _known_networks(self) -> list[str]:
+        """The /24 of every device already configured (found again without typing it)."""
+        out: list[str] = []
+        for entry in self._async_current_entries():
+            try:
+                net = str(ipaddress.ip_network(f"{entry.data[CONF_HOST]}/24", strict=False))
+            except (KeyError, ValueError):
+                continue
+            if net not in out:
+                out.append(net)
+        return out
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Search: UDP broadcast on Home Assistant's subnet, and a TCP scan of its
-        networks plus the ones typed (devices on another subnet / VLAN)."""
+        networks, of the networks of the devices already set up, and of the ones typed
+        (devices on another subnet / VLAN). When nothing is found the form comes back;
+        submitting it again unchanged goes to the manual entry."""
         errors: dict[str, str] = {}
         own = await _own_networks(self.hass)
+        default = own + [n for n in self._known_networks() if n not in own]
+        searched = default
         if user_input is not None:
             typed = [n.strip() for n in user_input.get(CONF_NETWORKS, "").replace(";", ",").split(",") if n.strip()]
+            networks = default + [n for n in typed if n not in default]
             try:
                 for net in typed:
                     ipaddress.ip_network(net, strict=False)
-                networks = own + [n for n in typed if n not in own]
+                if self._empty_search == networks:      # same search, nothing again: by hand
+                    self._host = None
+                    return await self.async_step_connect()
                 self._found = await self.hass.async_add_executor_job(_search, networks, DEFAULT_PORT)
             except ValueError:
                 errors[CONF_NETWORKS] = "invalid_network"
             else:
-                return await self.async_step_select()
+                if self._found:
+                    return await self.async_step_select()
+                self._empty_search = networks
+                searched = networks
+                errors["base"] = "no_devices"
         schema = vol.Schema({vol.Optional(CONF_NETWORKS, default=""): str})
         return self.async_show_form(step_id="user", data_schema=self.add_suggested_values_to_schema(
             schema, user_input or {}), errors=errors,
-            description_placeholders={"own": ", ".join(own) or "-"})
+            description_placeholders={"own": ", ".join(searched) or "-"})
 
     async def async_step_select(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         configured = {e.unique_id for e in self._async_current_entries()}

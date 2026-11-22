@@ -18,6 +18,8 @@ def search(monkeypatch, emulator):
 
     def fake_search(networks, port):
         calls.append(networks)
+        if "192.168.1.0/24" in networks and len(networks) == 1:
+            return []                                     # nothing on Home Assistant's own subnet
         return [DiscoveredDevice("127.0.0.1", None, "EMU0000000001", "Emu", "Emulator 1.0", {})]
 
     async def fake_own(hass):
@@ -43,6 +45,7 @@ async def test_config_flow_search(hass: HomeAssistant, emulator, search):
     # Searching again lists it as already configured; picking it stops there.
     again = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
     again = await hass.config_entries.flow.async_configure(again["flow_id"], {"networks": ""})
+    assert search[-1] == ["192.168.1.0/24", "127.0.0.0/24"]    # the configured device's range is searched
     labels = [o["label"] for o in again["data_schema"].schema["device"].config["options"]]
     assert labels[0].endswith("(already configured)")
     again = await hass.config_entries.flow.async_configure(again["flow_id"], {"device": "127.0.0.1"})
@@ -55,8 +58,9 @@ async def test_config_flow_invalid_range_and_manual(hass: HomeAssistant, emulato
     result = await hass.config_entries.flow.async_configure(result["flow_id"], {"networks": "192.168.5"})
     assert result["errors"] == {"networks": "invalid_network"}
     result = await hass.config_entries.flow.async_configure(result["flow_id"], {"networks": ""})
-    result = await hass.config_entries.flow.async_configure(result["flow_id"], {"device": "manual"})
-    assert result["step_id"] == "connect"
+    assert result["step_id"] == "user" and result["errors"] == {"base": "no_devices"}   # nothing found: say so
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {"networks": ""})
+    assert result["step_id"] == "connect"                     # submitted again unchanged: by hand
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {CONF_HOST: "127.0.0.1", CONF_PORT: 1, CONF_PASSWORD: ""})
     assert result["errors"] == {"base": "cannot_connect"}

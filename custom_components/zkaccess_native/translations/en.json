@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Search for a ZKTeco device",
-        "description": "Looks for PullSDK / ZKAccess devices (C3, inBio, MA500...): broadcast on Home Assistant's network and TCP port 4370 tried on {own}. A device on another subnet or VLAN is found when you add its range below. Do not manage the device from ZKAccess at the same time.",
+        "description": "Looks for PullSDK / ZKAccess devices (C3, inBio, MA500...): broadcast on Home Assistant's network and TCP port 4370 tried on {own}. A device on another subnet or VLAN is only found when you add its range below. Do not manage the device from ZKAccess at the same time.",
         "data": {
           "networks": "Other ranges to search (optional)"
         },
@@ -35,7 +35,8 @@
     "error": {
       "cannot_connect": "Cannot connect to the device.",
       "invalid_auth": "Wrong communication password.",
-      "invalid_network": "Invalid range (e.g. 192.168.5.0/24, at most /22)."
+      "invalid_network": "Invalid range (e.g. 192.168.5.0/24, at most /22).",
+      "no_devices": "No device found. Add the device's range (e.g. 192.168.5.0/24), or submit again unchanged to enter its address."
     },
     "abort": {
       "already_configured": "This device is already configured."
