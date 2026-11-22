@@ -12,7 +12,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from pyzkaccess_native import AccessEvent
 
-from .const import (DOMAIN, IDENTIFY_TIMEOUT_SECONDS)
+from .const import DOMAIN, IDENTIFY_SETTLE_SECONDS, IDENTIFY_TIMEOUT_SECONDS
 from .helpers import access_method, signal_changed
 
 _LOGGER = logging.getLogger(__package__ + ".coordinator")
@@ -52,8 +52,8 @@ class IdentifyMixin:
     @callback
     def _identify_event(self, ev: AccessEvent) -> None:
         idf = self.identify
-        if idf is None or idf["state"] not in ("waiting", "again", "unknown", "other"):
-            return  # busy (isolating / restoring)
+        if idf is None or idf["state"] not in ("waiting", "again", "unknown", "notyet", "other"):
+            return  # busy (isolating / preparing / restoring)
         if access_method(ev) in ("card", "code", "remote"):
             return
         uid = ev.user_id or 0
@@ -66,8 +66,16 @@ class IdentifyMixin:
                 user_id = idf["user_id"]
                 self._identify_found(user_id, mapping[uid])
                 self._restore_task = self.hass.async_create_task(self._async_identify_restore())
+            elif uid and uid != idf["user_id"] and idf.get("last_other") == uid:
+                # The same other UserID twice: really another finger than the one of step 1.
+                idf.update(state="other")
+                self._identify_notify()
             else:
-                idf.update(state="other")  # another finger than the one of step 1
+                # Not conclusive: a copy written on a new UserID can take a few tens of seconds
+                # to be matched by the MA500 (unknown finger, or the former owner meanwhile),
+                # and a finger badly placed gives the same. Ask again, decide on a later reading.
+                idf["last_other"] = uid if uid and uid != idf["user_id"] else None
+                idf.update(state="notyet")
                 self._identify_notify()
             return
         fingers = self._fingers_of(uid) if uid else []
@@ -100,6 +108,14 @@ class IdentifyMixin:
             return
         if self.identify is not idf:  # cancelled meanwhile
             await self._async_identify_restore()
+            return
+        # The MA500 needs time before it matches a copy written on a new UserID (measured
+        # 22/11: first match after about 20 s, stable after about 45 s). Readings taken
+        # earlier are ignored rather than reported as "not the same finger".
+        idf.update(state="preparing", settle=IDENTIFY_SETTLE_SECONDS)
+        self._identify_notify()
+        await asyncio.sleep(IDENTIFY_SETTLE_SECONDS)
+        if self.identify is not idf:  # cancelled meanwhile (the cancel restores)
             return
         idf.update(state="again", mapping=mapping, started=time.monotonic())
         self._identify_notify()
@@ -156,7 +172,7 @@ class IdentifyMixin:
     @callback
     def _identify_check_timeout(self) -> None:
         idf = self.identify
-        if idf is None or idf["state"] in ("isolating", "restoring"):
+        if idf is None or idf["state"] in ("isolating", "preparing", "restoring"):
             return
         if time.monotonic() - idf["started"] > IDENTIFY_TIMEOUT_SECONDS:
             self.identify = None

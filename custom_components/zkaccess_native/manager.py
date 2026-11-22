@@ -157,7 +157,8 @@ class AccessManager:
         UserIDs. Safe to run again after a partial restore. With ``templates`` and ``slot``
         (kept from the copy) nothing is re-read but the check; without them (after a
         restart) the templates are read back from the temporary UserIDs."""
-        present = {t.finger_id for t in self.client.get_templates(user_id, with_data=False)}
+        current = self.client.get_templates(user_id, with_data=False)
+        present = {t.finger_id for t in current}
         missing_fingers = [(pin, finger) for pin, finger in mapping.items() if finger not in present]
         if missing_fingers:
             if slot is None:
@@ -173,10 +174,14 @@ class AccessManager:
                         raise SafetyError(f"temporary UserID {pin} has no template (finger {finger} of {user_id})")
                     source = found[0]
                 self.client.write_records("templatev10", [self._known_template(self._template_row(user_id, finger, source, slot))])
-            present = {t.finger_id for t in self.client.get_templates(user_id, with_data=False)}
+            current = self.client.get_templates(user_id, with_data=False)
+            present = {t.finger_id for t in current}
         missing = set(mapping.values()) - present
         if missing:
             raise SafetyError(f"fingers {sorted(missing)} of UserID {user_id} could not be restored")
+        if slot is not None and any(t.slot is not None and t.slot != slot for t in current):
+            # A template bound to another internal slot matches someone else: bind it back.
+            self.client.rebind_templates(user_id, slot)
         for pin in mapping:
             self._delete_temporary(pin)
 

@@ -344,6 +344,13 @@ A fingerprint recognized for a user **without authorization** gives event **23**
 denied) with the UserID **[verified]**: an application can use it as a credential that does not
 release the door.
 
+Delay before a template written over the network is matched **[verified on MA500, 22/11/2026]**:
+a template copied to a **newly created** user was first matched after about 20 s, with
+"unknown finger" (34) readings until about 35 s, and matched every time from about 45 s.
+A template written back to an **existing** user, and a deletion, were taken into account at once
+(first reading, under 3 s). An application that moves a fingerprint to a new user must wait,
+and must not treat an early "unknown finger" as a final answer.
+
 Users enrolled on the device keypad get no name, and an automatic authorization
 (time zone 1, door 1). An RFID card enrolled on the keypad fills `CardNo` even when the
 `~RFCardOn` parameter reads 0.

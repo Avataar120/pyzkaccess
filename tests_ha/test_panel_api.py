@@ -212,6 +212,12 @@ async def test_toggle_needs_valid_targets(hass: HomeAssistant, emulator, setup, 
     assert not msg["success"]
 
 
+@pytest.fixture(autouse=True)
+def _no_settle_wait(monkeypatch):
+    """The real MA500 delay (IDENTIFY_SETTLE_SECONDS) is not needed with the emulator."""
+    monkeypatch.setattr("custom_components.zkaccess_native.identify.IDENTIFY_SETTLE_SECONDS", 0)
+
+
 async def test_identify_finger(hass: HomeAssistant, emulator, setup):
     entry, call = setup
     coord = entry.runtime_data
@@ -262,6 +268,15 @@ async def test_identify_finger(hass: HomeAssistant, emulator, setup):
     state = await call("state", refresh=True)       # temporary UserIDs stay hidden
     assert all(c["user_id"] < 9990 for p in state["snapshot"]["persons"] for c in p["categories"])
     assert state["snapshot"]["unassigned"] == []
+    # Readings that do not conclude (copy not matched yet, former owner, one other UserID)
+    # ask again instead of reporting another finger; the same other UserID twice does.
+    for uid, event in ((0, 34), (120, 14), (128, 14)):
+        emulator.state.push_event(event, user_id=uid)
+        await poll(hass, entry)
+        assert notices[-1]["state"] == "notyet"
+    emulator.state.push_event(14, user_id=128)
+    await poll(hass, entry)
+    assert notices[-1]["state"] == "other"
     emulator.state.push_event(23, user_id=temp)     # recognized, no rights
     await poll(hass, entry)
     await hass.async_block_till_done()

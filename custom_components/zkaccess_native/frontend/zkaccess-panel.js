@@ -117,6 +117,8 @@ const I18N = {
     identify_unknown: "The reader does not know this finger. Try another finger, or enroll it.",
     identify_isolating: "UserID {u} has several fingerprints: separating them on the device…",
     identify_again: "Place the same finger on the reader again.",
+    identify_preparing: "Preparing the reader (about {s} s, the reader needs this time to take the copy into account)…",
+    identify_notyet: "Not recognized yet: place the same finger again.",
     identify_other: "That was not the same finger: place the finger from the first step again.",
     identify_restoring: "Putting the fingerprints back…",
     identify_found: "Fingerprint found", identify_found_of: "{name} · UserID {u} · slot {s}",
@@ -226,6 +228,8 @@ const I18N = {
     identify_unknown: "Le lecteur ne connaît pas ce doigt. Essayez un autre doigt, ou enregistrez-le.",
     identify_isolating: "Le UserID {u} a plusieurs empreintes : séparation sur le lecteur…",
     identify_again: "Reposez le même doigt sur le lecteur.",
+    identify_preparing: "Préparation du lecteur (environ {s} s, le temps qu'il prenne la copie en compte)…",
+    identify_notyet: "Pas encore reconnu : reposez le même doigt.",
     identify_other: "Ce n'est pas le même doigt : reposez le doigt de la première étape.",
     identify_restoring: "Remise en place des empreintes…",
     identify_found: "Empreinte trouvée", identify_found_of: "{name} · UserID {u} · emplacement {s}",
@@ -660,7 +664,7 @@ class ZkAccessPanel extends HTMLElement {
   }
   fingerAt(i) { return this.fingersOf(this.findPerson(this._s.person)).find((f) => f.physical === i); }
 
-  identifyActive(m) { return ["starting", "waiting", "unknown", "isolating", "again", "other", "restoring"].includes(m?.id?.state); }
+  identifyActive(m) { return ["starting", "waiting", "unknown", "isolating", "preparing", "again", "notyet", "other", "restoring"].includes(m?.id?.state); }
 
   openEnroll(physical) {
     this._s.modal = { kind: "enroll", person: this._s.person, physical, step: "choose" };
@@ -869,7 +873,9 @@ class ZkAccessPanel extends HTMLElement {
       case "starting": case "waiting": body = spin(this.t("identify_wait")); break;
       case "unknown": body = `${warn(this.t("identify_unknown"))}${spin(this.t("identify_wait"))}`; break;
       case "isolating": body = spin(this.t("identify_isolating", { u: r.user_id })); break;
+      case "preparing": body = spin(this.t("identify_preparing", { s: r.settle ?? 20 })); break;
       case "again": body = spin(this.t("identify_again")); break;
+      case "notyet": body = `<div class="row muted">${this.t("identify_notyet")}</div>${spin(this.t("identify_again"))}`; break;
       case "other": body = `${warn(this.t("identify_other"))}${spin(this.t("identify_again"))}`; break;
       case "restoring": body = spin(this.t("identify_restoring")); break;
       case "found": {

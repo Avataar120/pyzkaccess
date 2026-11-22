@@ -12,6 +12,12 @@
   more than 30 minutes; device rebooted for slowness at least twice in 24 hours.
 - Home Assistant integration: icons in `icons.json` (entities and actions), `PARALLEL_UPDATES`
   declared, diagnostics include the maintenance settings, last response time and reboot.
+- **Fix (MA500): finger identification reported "not the same finger".** The MA500 takes about
+  20 to 45 s to match a template copied to a new UserID (measured). The identification now waits
+  20 s after separating the fingerprints ("preparing the reader"), and a reading that does not
+  conclude (unknown finger, the former owner, another UserID seen once) asks for the finger again
+  instead of reporting another finger. The restore also checks that the templates are bound to
+  the user's slot, and rebinds them otherwise.
 - **Fix (MA500): fingerprints recognized as another person.** Rewriting a user's record
   (rename, card, code) without its internal slot made the MA500 move the user to the lowest
   free slot while its fingerprint templates stayed bound to the old one: they failed, or matched
