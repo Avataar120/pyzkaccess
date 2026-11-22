@@ -386,10 +386,22 @@ person 12 + category 3 (Arm)   -> UserID 123
   another one to close.
 - On the keypad, the code is typed after the UserID, so a person can reuse the same code in
   every category.
-- Each category says whether it **triggers the device relay**. "Open" does; an "Arm" finger
+- Each category says whether **the reader opens its lock** (its own relay). An "Arm" finger
   usually should not open the door: the device then refuses it (event 23 with the UserID,
-  verified on the MA500), and the integration turns that refusal into an `action` event for
-  Home Assistant.
+  verified on the MA500; red LED as for a refusal), and the integration turns that refusal
+  into an `action` event for Home Assistant. Automations react to both `granted` and
+  `action`, so the door can be opened by Home Assistant either way.
+
+> **Security advice: do not wire the door lock to the reader's own relay when the reader is
+> outside.** A standalone reader such as the MA500 is mounted on the outer wall. If the lock
+> is wired to its relay, someone who tears the reader off reaches those wires and opens the
+> door just by touching them together. Keep the lock relay inside (a relay module driven by
+> Home Assistant, or a ZKTeco controller such as a C3 / inBio mounted indoors, with only the
+> reader outside), let Home Assistant open the door from the access event (see the
+> *Open the door and disarm* blueprint), and use the reader's relay for nothing critical.
+> Trade-off: with the relay unused, the reader shows a red LED for accepted credentials of
+> categories without its lock; enable the reader's lock on a category only if its relay is
+> not wired to anything critical.
 - **Second presentation** (per category): presenting the same card or finger again within a
   few seconds (5 s by default, measured with the device's own event time) runs a second
   category *in addition*. Example: badge once to open the gate,
@@ -626,7 +638,11 @@ against each of them, but you should know them:
    to the device can leave users without access.
 7. Events are delivered to every open session: if two programs act on events, both will
    act. Do not manage a device from ZKAccess and this library at the same time.
-8. **Some firmware ignore a delete with several conditions** (the MA500 answers OK to
+8. **The reader's relay is reachable from outside.** Wiring a door lock to the relay of a
+   reader mounted outdoors lets anyone who tears it off open the door by touching the wires.
+   → Keep the lock relay indoors and let Home Assistant open the door (see
+   [People and action categories](#people-and-action-categories)).
+9. **Some firmware ignore a delete with several conditions** (the MA500 answers OK to
    `Pin` + `FingerID` and removes nothing). → `delete_templates(user, finger_id)` and
    `move_template()` delete by `Pin` only and write the other fingers back.
 

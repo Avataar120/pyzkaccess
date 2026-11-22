@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- README: security advice, do not wire the door lock to the relay of a reader mounted
+  outside (tearing it off would expose the wires); keep the lock relay indoors and let Home
+  Assistant open the door.
+
 ## 0.5.0 - 2026-11-22
 
 - Home Assistant integration: **Reconfigure** a device (new address, port or password)
