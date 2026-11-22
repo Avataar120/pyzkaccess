@@ -246,10 +246,16 @@ Event codes observed on the reference device (MA500):
 | 7 | Cancel alarm | 0 | |
 | 8 | Remote opening | 0 | also the echo of a door opened by a control command |
 | 14 | Fingerprint open | the UserID | |
-| 23 | Access denied: recognized, no right to open | the UserID | UserID without `userauthorize` (verified with a fingerprint; expected for a card or code) |
+| 23 | Access denied: recognized, no right to open | the UserID | UserID without `userauthorize` (verified with a fingerprint; expected for a card or code). The MA500 shows it as a refusal: red LED blinking, lock output unchanged |
 | 27 | Unregistered card | 0 | the card number is in bytes 0-3 |
 | 34 | Unregistered fingerprint | 0 | |
 | 255 | Status record | | door and alarm state, returned on every poll |
+
+Categories without the device lock (Home Assistant integration): their UserIDs have no
+`userauthorize` row, so the device answers with event 23 and **blinks its red LED** as for any
+refusal, while the integration reports an `action` and automations run normally. For a green
+"accepted" feedback on the device, keep the device lock enabled for the category: event 14 / 0,
+`granted` in Home Assistant, automations unchanged.
 
 The `transaction` table keeps every event (tens of thousands of rows). A filtered read
 (`08` with a condition) on it can take more than 5 seconds, during which the device answers
