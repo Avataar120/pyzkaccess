@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.0 - 2026-11-22
 
 - Home Assistant integration: the store is saved safely from device operations, which run
   outside the event loop (Home Assistant's delayed save was scheduled from that thread, and the
