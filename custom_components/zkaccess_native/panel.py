@@ -23,6 +23,8 @@ async def async_register_panel(hass: HomeAssistant, version: str, title: str | N
         hass.data[_STATIC] = True
         await hass.http.async_register_static_paths(
             [StaticPathConfig(STATIC_URL, str(FRONTEND_DIR), cache_headers=False)])
+        # Dashboard card "custom:zkaccess-activity-card", loaded on every page.
+        frontend.add_extra_js_url(hass, f"{STATIC_URL}/zkaccess-card.js?v={version}")
     await _register(hass, version, title)
 
 

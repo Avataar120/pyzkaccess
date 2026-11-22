@@ -410,6 +410,19 @@ taken meanwhile. The device may still drive its own lock output for a recognized
 **Learning a card.** Click *Learn a card* and present the card: the device reports it as
 unknown, the page shows its number and writes it to the chosen person and category.
 
+### Dashboard card
+
+The integration also provides a card with the access activity, the same rows as the
+panel's *Activity* tab, updated live (it needs an administrator, like the panel):
+
+```yaml
+type: custom:zkaccess-activity-card
+title: Front door        # optional
+limit: 10                # rows shown, 1 to 100
+filter: all              # all, open, actions or denied
+person: 12               # optional: one person only
+```
+
 ### Entities
 
 | Entity | Description |

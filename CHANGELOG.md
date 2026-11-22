@@ -2,9 +2,12 @@
 
 ## Unreleased
 
+- Home Assistant integration: dashboard card `custom:zkaccess-activity-card`, loaded
+  automatically: the access activity with the same rows as the panel's Activity tab (person,
+  category, fingerprint / card / phone, second presentation, refusals), live; options
+  `title`, `limit`, `filter` (all / open / actions / denied), `person`, `device`.
 - Home Assistant integration: logbook entries in French when Home Assistant is in French
-  (method, second presentation, refusals). Tip: a logbook card with `target: device_id:` of
-  the device shows only its accesses.
+  (method, second presentation, refusals).
 
 ## 0.4.1 - 2026-11-22
 
