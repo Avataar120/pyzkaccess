@@ -26,6 +26,8 @@ DEFAULTS: dict[str, Any] = {
     "persons": {},
     # person number (str) -> list of [user_id, timezone_id, door_mask] removed when disabled
     "disabled": {},
+    # person number (str) -> category digits switched off for that person
+    "categories_off": {},
     # "user_id:finger_id" -> physical finger 0-9 (0 = left little ... 9 = right little)
     "fingers": {},
     # UserIDs already seen (to notify about users enrolled on the keypad)
@@ -82,6 +84,9 @@ class AccessStore:
 
     def is_disabled(self, person: int) -> bool:
         return str(person) in self.data["disabled"]
+
+    def is_category_off(self, person: int, digit: int | None) -> bool:
+        return digit is not None and int(digit) in self.data.get("categories_off", {}).get(str(person), [])
 
     def physical_finger(self, user_id: int, finger_id: int) -> int | None:
         return self.data["fingers"].get(f"{user_id}:{finger_id}")

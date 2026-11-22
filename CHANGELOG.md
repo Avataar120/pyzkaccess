@@ -36,6 +36,15 @@
   of the temporary UserIDs of an identification never reach the history.
 - Panel: fingers are aligned whether enrolled or not, and a vertical line separates the
   two hands on wide screens.
+- Home Assistant integration: each category can be switched off for one person (*Active*
+  column of the person's categories). The device refuses its fingers, card and code, and
+  the integration reports them as denied, phones included; a second presentation or a
+  toggle that leads to a switched-off category is denied too. Kept when the whole person
+  is disabled and enabled again.
+- README and `examples/home_assistant_automations.yaml`: automations for fingerprints,
+  cards and phones (relay driven by Home Assistant, alarm, garage, rules by method, per
+  person, double badge, repeated refusals, reader offline). `granted` and `action` only
+  differ by the device relay: react to both.
 
 ## 0.3.0 - 2026-11-22
 

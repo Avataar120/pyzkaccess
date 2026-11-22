@@ -372,7 +372,7 @@ Disabling a person also disables their phones; each phone can also be disabled o
 
 | Tab | What you can do |
 |---|---|
-| **People** | list, search, create; per person: a two-hand view of enrolled fingers with their category, move a finger to another category, delete it; cards and codes per category; paired phones; enable / disable all access (rights are remembered and restored); link to a Home Assistant person; delete. UserIDs that do not follow the numbering (e.g. enrolled on the keypad) are listed as **Unassigned** and can be attached to a person. |
+| **People** | list, search, create; per person: a two-hand view of enrolled fingers with their category, move a finger to another category, delete it; cards and codes per category; paired phones; enable / disable all access (rights are remembered and restored); switch each category on or off for that person (*Active* column: the device refuses its credentials and Home Assistant sees them as denied); link to a Home Assistant person; delete. UserIDs that do not follow the numbering (e.g. enrolled on the keypad) are listed as **Unassigned** and can be attached to a person. |
 | **Activity** | live log with names, category, method (fingerprint, card, code, remote) and second presentations; filters; unknown cards can be assigned in one click |
 | **Door** | open / hold open / close the lock relay; door settings written to the device (relay time, door sensor, open-door alarm delay, verification mode, free-passage time zone, relock on close); device clock; cancel alarm |
 | **Settings** | numbering, action categories (incl. toggle), second-presentation delay, NFC tags for phones, automatic backups (on every change, nightly, retention), download / restore / import, keypad notifications, reader polling interval (0.3 to 3 s, applied live) |
@@ -439,7 +439,37 @@ and addresses are removed).
 
 ### Example automations
 
-Run the right action for each category:
+A known fingerprint, card, code or phone gives `result: granted` when its category has
+**Device relay** checked (the device released its own lock output) and `result: action`
+otherwise (the device refused on purpose, Home Assistant acts). That setting only changes
+the device's own output: react to both. Unknown fingers and cards, people or categories
+switched off are always `denied`.
+
+Open with a relay driven by Home Assistant, and disarm the alarm:
+
+```yaml
+automation:
+  - alias: "Front door - open"
+    triggers:
+      - trigger: event
+        event_type: zkaccess_native_access
+        event_data:
+          category_type: open
+    conditions:
+      - "{{ trigger.event.data.result in ['granted', 'action'] }}"
+    actions:
+      - action: switch.turn_on
+        target: { entity_id: switch.front_door_strike }
+      - delay: { seconds: 3 }
+      - action: switch.turn_off
+        target: { entity_id: switch.front_door_strike }
+      - action: alarm_control_panel.alarm_disarm
+        target: { entity_id: alarm_control_panel.home }
+        data: { code: !secret alarm_code }
+    mode: queued
+```
+
+One automation for every category, with a rule by method (phones open only in the daytime):
 
 ```yaml
 automation:
@@ -451,14 +481,19 @@ automation:
       - "{{ trigger.event.data.result in ['granted', 'action'] }}"
     actions:
       - choose:
-          - conditions: "{{ trigger.event.data.category_type == 'open' }}"
+          - conditions:
+              - "{{ trigger.event.data.category_type == 'open' }}"
+              - "{{ trigger.event.data.method != 'phone' or 7 <= now().hour < 22 }}"
             sequence:
               - action: lock.unlock
                 target: { entity_id: lock.front_door }
           - conditions: "{{ trigger.event.data.category_type == 'arm' }}"
             sequence:
+              - action: lock.lock
+                target: { entity_id: lock.front_door }
               - action: alarm_control_panel.alarm_arm_away
                 target: { entity_id: alarm_control_panel.home }
+                data: { code: !secret alarm_code }
           - conditions: "{{ trigger.event.data.category == 'Garage' }}"
             sequence:
               - action: cover.toggle
@@ -478,10 +513,12 @@ automation:
     actions:
       - action: notify.mobile_app_phone
         data:
-          message: "Refused at the front door: {{ trigger.event.data.event_name }}"
+          message: "Refused at the front door: {{ trigger.event.data.event_name }} ({{ trigger.event.data.method }})"
 ```
 
-More in [examples/](examples/).
+More in [examples/home_assistant_automations.yaml](examples/home_assistant_automations.yaml):
+cards that never disarm, welcome light for one person after sunset, double badge, three
+refusals in a minute with a camera snapshot, reader offline alert, logbook.
 
 ## Safety notes (read this)
 

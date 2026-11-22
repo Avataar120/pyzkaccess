@@ -283,7 +283,8 @@ class ZKCoordinator(DataUpdateCoordinator[ZKData]):
         who = self._user_index.get(ev.user_id) if ev.user_id else None
         digit = who["digit"] if who else None
         cat = self.store.category(digit) if digit is not None else None
-        disabled = bool(who and self.store.is_disabled(who["person"]))
+        disabled = bool(who and (self.store.is_disabled(who["person"])
+                                 or self.store.is_category_off(who["person"], digit)))
         if code in GRANTED_EVENTS:
             result = RESULT_GRANTED
         elif code in DENIED_EVENTS:
@@ -300,6 +301,8 @@ class ZKCoordinator(DataUpdateCoordinator[ZKData]):
         digit, cat, gesture, toggled = self._resolve(digit, cat, result, ("user", ev.user_id) if ev.user_id else None)
         if gesture == "double":
             result = RESULT_ACTION
+        if who and result in (RESULT_GRANTED, RESULT_ACTION) and self.store.is_category_off(who["person"], digit):
+            result = RESULT_DENIED  # second presentation / toggle led to a category switched off
         return self._event(result=result, code=code, event_name=ev.label, user_id=ev.user_id, who=who,
                            digit=digit, cat=cat, gesture=gesture, toggled=toggled,
                            method=access_method(ev), card=ev.card or None, door=ev.door,
@@ -403,9 +406,12 @@ class ZKCoordinator(DataUpdateCoordinator[ZKData]):
             person = self.snapshot and next((p for p in self.snapshot["persons"] if p["num"] == phone["person"]), None)
             who = {"person": phone["person"], "person_name": person["name"] if person else None,
                    "ha_person": person["ha_person"] if person else None}
-        allowed = bool(phone and phone.get("enabled", True) and cat and not self.store.is_disabled(phone["person"]))
+        allowed = bool(phone and phone.get("enabled", True) and cat and not self.store.is_disabled(phone["person"])
+                       and not self.store.is_category_off(phone["person"], digit))
         result = RESULT_ACTION if allowed else RESULT_DENIED
         digit, cat, gesture, toggled = self._resolve(digit, cat, result, ("phone", device_id))
+        if allowed and self.store.is_category_off(phone["person"], digit):
+            allowed, result = False, RESULT_DENIED
         if allowed and (cat or {}).get("relay"):
             result = RESULT_GRANTED  # the integration releases the door itself (below)
         user_id = None

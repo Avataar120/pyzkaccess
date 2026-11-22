@@ -176,6 +176,7 @@ class AccessManager:
             person["phones"] = [{"device_id": dev, **{k: v for k, v in ph.items() if k != "person"}}
                                 for dev, ph in self.store.data["phones"].items() if ph["person"] == num]
             person["enabled"] = not self.store.is_disabled(num)
+            person["categories_off"] = list(self.store.data.get("categories_off", {}).get(str(num), []))
             person["ha_person"] = meta.get("ha_person")
             person["categories"].sort(key=lambda c: c["digit"])
         return {
@@ -199,7 +200,7 @@ class AccessManager:
     def apply_rights(self, user_id: int, digit: int, person: int) -> None:
         """Give or remove the right to open, according to the category's relay setting."""
         cat = self.store.category(digit) or {"relay": False}
-        if cat.get("relay") and not self.store.is_disabled(person):
+        if cat.get("relay") and not self.store.is_disabled(person) and not self.store.is_category_off(person, digit):
             if not self.client.get_authorizations(user_id):
                 self.client.grant(user_id, 1, self.door_mask)
         else:
@@ -291,7 +292,31 @@ class AccessManager:
             if saved is None:
                 return
             for uid, tz, mask in saved:
+                split = self.numbering.split(uid)
+                if split and self.store.is_category_off(*split):
+                    continue  # category switched off for this person meanwhile
                 self.client.grant(uid, tz, mask)
+            # Categories switched back on while the person was disabled get their rights too.
+            for uid in self.person_user_ids(person):
+                split = self.numbering.split(uid)
+                if split:
+                    self.apply_rights(uid, split[1], person)
+        self.store.save()
+
+    def category_enable(self, person: int, digit: int, enabled: bool) -> None:
+        """Switch one category on or off for one person. Off: the device refuses its
+        credentials (rights removed) and Home Assistant treats them as denied."""
+        if self.store.category(digit) is None:
+            raise SafetyError(f"category {digit} is not configured")
+        off = set(self.store.data.setdefault("categories_off", {}).get(str(person), []))
+        off.discard(digit) if enabled else off.add(digit)
+        if off:
+            self.store.data["categories_off"][str(person)] = sorted(off)
+        else:
+            self.store.data["categories_off"].pop(str(person), None)
+        user_id = self.numbering.user_id(person, digit)
+        if not self.store.is_disabled(person) and self.client.get_user(user_id) is not None:
+            self.apply_rights(user_id, digit, person)
         self.store.save()
 
     # ---------------------------------------------------------------- fingers

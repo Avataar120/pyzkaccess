@@ -163,6 +163,18 @@ async def ws_person_enable(hass, connection, msg) -> None:
     await _guard(connection, msg, coord.async_run(coord.manager.person_enable, msg["person"], msg["enabled"]))
 
 
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/person/category_enable", ENTRY: str,
+                                  vol.Required("person"): int, vol.Required("digit"): vol.All(int, vol.Range(0, 9)),
+                                  vol.Required("enabled"): bool})
+@websocket_api.require_admin
+@websocket_api.async_response
+async def ws_person_category_enable(hass, connection, msg) -> None:
+    """Switch one category on or off for one person."""
+    coord = _coordinator(hass, msg["entry_id"])
+    await _guard(connection, msg, coord.async_run(coord.manager.category_enable, msg["person"], msg["digit"],
+                                                  msg["enabled"]))
+
+
 @websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/credential/set", ENTRY: str,
                                   vol.Required("person"): int, vol.Required("digit"): vol.All(int, vol.Range(0, 9)),
                                   vol.Optional("card"): vol.Any(None, vol.All(int, vol.Range(1, 4294967295))),
@@ -479,7 +491,7 @@ def ws_settings_save(hass, connection, msg) -> None:
 
 
 COMMANDS = [ws_devices, ws_state, ws_history, ws_subscribe, ws_person_save, ws_person_delete,
-            ws_person_enable, ws_credential_set, ws_finger_delete, ws_finger_update, ws_enroll_start,
+            ws_person_enable, ws_person_category_enable, ws_credential_set, ws_finger_delete, ws_finger_update, ws_enroll_start,
             ws_enroll_cancel, ws_identify_start, ws_identify_cancel, ws_phone_pair_start, ws_phone_pair_cancel, ws_phone_update, ws_phone_remove,
             ws_tags_save, ws_unassigned_assign, ws_user_delete, ws_categories_save, ws_door_get,
             ws_door_set, ws_door_control, ws_clock_sync, ws_backup_list, ws_backup_create,

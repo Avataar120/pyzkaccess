@@ -325,3 +325,51 @@ async def test_poll_interval_setting(hass: HomeAssistant, emulator, setup):
         with pytest.raises(AssertionError):
             await call("settings/save", poll_interval=bad)
     assert coord.update_interval.total_seconds() == 3
+
+
+async def test_category_switched_off_for_a_person(hass: HomeAssistant, emulator, setup):
+    entry, call = setup
+    await call("categories/save", categories={"0": {"type": "open", "name": "Open", "relay": True},
+                                              "8": {"type": "custom", "name": "Garage", "relay": False}})
+    await call("person/save", person=12, name="Bob")
+    with ZKAccess("127.0.0.1", emulator.port) as dev:
+        from pyzkaccess_native import User
+        for uid in (120, 128):
+            dev.save_user(User(user_id=uid, name="Bob"))
+        dev.grant(120, 1, 1)
+    await call("state", refresh=True)
+    events = async_capture_events(hass, EVENT_ACCESS)
+
+    def rights(uid):
+        with ZKAccess("127.0.0.1", emulator.port) as dev:
+            return dev.get_authorizations(uid)
+
+    # Relay-less category: the device refuses (23), the integration reports an action.
+    emulator.state.push_event(23, user_id=128)
+    await poll(hass, entry)
+    assert events[-1].data["result"] == "action" and events[-1].data["category"] == "Garage"
+
+    await call("person/category_enable", person=12, digit=8, enabled=False)
+    await call("person/category_enable", person=12, digit=0, enabled=False)
+    bob = (await call("state"))["snapshot"]["persons"][0]
+    assert bob["categories_off"] == [0, 8]
+    assert rights(120) == []                                  # the device refuses it now
+    emulator.state.push_event(23, user_id=120)
+    emulator.state.push_event(23, user_id=128)
+    await poll(hass, entry)
+    assert [e.data["result"] for e in events[-2:]] == ["denied", "denied"]
+
+    # Disabling then enabling the whole person keeps the category off.
+    await call("person/enable", person=12, enabled=False)
+    await call("person/category_enable", person=12, digit=0, enabled=True)
+    assert rights(120) == []                                  # person still disabled
+    await call("person/enable", person=12, enabled=True)
+    assert len(rights(120)) == 1                              # category 0 back on with the person
+    await call("person/category_enable", person=12, digit=8, enabled=True)
+    assert rights(128) == []                                  # relay-less: never a device right
+    emulator.state.push_event(14, user_id=120)
+    emulator.state.push_event(23, user_id=128)
+    emulator.state.push_event(34, user_id=0)                  # unknown finger
+    await poll(hass, entry)
+    assert [e.data["result"] for e in events[-3:]] == ["granted", "action", "denied"]
+    assert events[-1].data["person"] is None

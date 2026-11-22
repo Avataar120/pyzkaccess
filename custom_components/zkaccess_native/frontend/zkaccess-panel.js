@@ -101,6 +101,7 @@ const I18N = {
     on_hand: "Finger on the hand", not_placed: "— not placed —", nfc_tag: "NFC tag “{n}”", reload: "Reload from the device",
     relay_confirm: "These UserIDs will lose the right to open the door (the device will refuse them; Home Assistant will still receive their actions): {ids}. Continue?",
     confirm: "Confirm",
+    cat_active: "Active", cat_active_help: "Switch a category off for this person: the device refuses its fingers, card and code, and Home Assistant treats them as denied.",
     identify: "Identify a finger", identify_title: "Identify a finger",
     identify_existing: "Already enrolled? Identify it on the reader",
     identify_note: "While identifying, the reader is only used to recognize the finger: its accesses run no automation and are not logged (stops after 60 s without a finger). The device itself may still drive its own lock output.",
@@ -201,6 +202,7 @@ const I18N = {
     on_hand: "Doigt sur la main", not_placed: "— non placé —", nfc_tag: "Tag NFC « {n} »", reload: "Relire le lecteur",
     relay_confirm: "Ces UserID vont perdre le droit d'ouvrir la porte (le lecteur les refusera ; Home Assistant recevra quand même leurs actions) : {ids}. Continuer ?",
     confirm: "Confirmer",
+    cat_active: "Active", cat_active_help: "Désactiver une catégorie pour cette personne : le lecteur refuse ses doigts, sa carte et son code, et Home Assistant les traite comme refusés.",
     identify: "Identifier un doigt", identify_title: "Identifier un doigt",
     identify_existing: "Déjà enregistré ? L'identifier sur le lecteur",
     identify_note: "Pendant l'identification, le lecteur sert seulement à reconnaître le doigt : ses accès ne déclenchent aucune automation et ne sont pas journalisés (arrêt après 60 s sans doigt). Le lecteur peut toutefois actionner sa propre sortie de gâche.",
@@ -285,6 +287,7 @@ tr.click { cursor: pointer; } tr.click:hover td { background: color-mix(in srgb,
   align-items: flex-start; justify-content: center; padding-top: 10px; color: #fff; }
 .finger.free { background: transparent; border: 2px dashed var(--zk-muted); color: var(--zk-muted); font-size: 20px; }
 .finger.sel { outline: 3px solid #f59e0b; outline-offset: 3px; }
+tr.off td { color: var(--zk-muted); } tr.off td .pill { opacity: .45; }
 .fname { font-size: 12px; color: var(--zk-muted); text-align: center; }
 .detail { margin-top: 18px; border: 1px solid var(--zk-line); border-radius: 10px; padding: 14px; display: flex; flex-wrap: wrap; align-items: flex-end; gap: 14px; }
 .list > div { padding: 10px 0; border-top: 1px solid var(--zk-line); }
@@ -477,6 +480,7 @@ class ZkAccessPanel extends HTMLElement {
         s.modal = null; await this.refresh(); s.person = p; break;
       }
       case "toggle-person": await this.call("person/enable", { person: Number(d.p), enabled: el.checked }); await this.refresh(); return;
+      case "toggle-cat": await this.call("person/category_enable", { person: Number(d.p), digit: Number(d.d), enabled: el.checked }); await this.refresh(); return;
       case "save-identity": {
         await this.call("person/save", { person: s.person, name: this.val("id-name"), ha_person: this.val("id-ha") || null }, this.t("saved"));
         await this.refresh(); return;
@@ -877,7 +881,8 @@ class ZkAccessPanel extends HTMLElement {
     const html = cols.map((i) => {
       const f = this.fingerAt(i), key = FINGER_KEYS[i];
       const sel = s.finger && s.finger.physical === i;
-      const style = `height:${FINGER_HEIGHT[key]}px;${f ? `background:${this.color(f.digit)}` : ""}`;
+      const offCat = f && (this.findPerson(s.person)?.categories_off || []).includes(f.digit);
+      const style = `height:${FINGER_HEIGHT[key]}px;${f ? `background:${this.color(f.digit)}` : ""}${offCat ? ";opacity:.35" : ""}`;
       return `<div class="fcol"><div class="ftip"><button class="finger ${f ? "" : "free"} ${sel ? "sel" : ""}" data-act="finger" data-i="${i}" style="${style}"
         aria-label="${esc(this.fingerName(i))}">${f ? `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 11v4"/><path d="M8 15v-3a4 4 0 0 1 8 0v4"/><path d="M5 14v-2a7 7 0 0 1 14 0v5"/></svg>` : "+"}</button></div>
         <span class="fname">${this.t("finger_" + key)}</span>${f && !this.plain() ? this.catPill(f.digit, this.catName(f.digit)) : ""}</div>`;
@@ -922,11 +927,14 @@ class ZkAccessPanel extends HTMLElement {
       <div class="cred"><span class="muted">${this.t("code")}</span><span class="val">${c?.has_code ? "••••" : this.t("none")}</span>
         <span class="btns"><button class="btn sm" data-act="code-edit" data-p="${p.num}" data-d="${d}">${c?.has_code ? this.t("change") : this.t("set_code")}</button>
         ${c?.has_code ? `<button class="btn sm danger" data-act="code-remove" data-p="${p.num}" data-d="${d}">${this.t("remove")}</button>` : ""}</span></div></div>`).join("");
-    const table = this.plain() ? "" : `<section class="card tablewrap"><h2>${this.t("categories_of")}</h2><table style="min-width:560px"><thead><tr>
-      <th>${this.t("category")}</th><th>${this.t("user_id")}</th><th>${this.t("fingerprints_title")}</th><th>${this.t("card")}</th><th>${this.t("code")}</th><th>${this.t("relay")}</th></tr></thead><tbody>
-      ${p.categories.map((c) => `<tr><td>${this.catPill(c.digit, this.catName(c.digit))}</td><td class="mono">${c.user_id}</td><td>${c.fingers.length}</td>
-        <td>${c.card ? this.t("yes") : this.t("none")}</td><td>${c.has_code ? this.t("yes") : this.t("none")}</td>
-        <td>${cats[String(c.digit)]?.relay ? this.t("relay_yes") : this.t("relay_no")}</td></tr>`).join("")}</tbody></table></section>`;
+    const off = new Set(p.categories_off || []);
+    const table = this.plain() ? "" : `<section class="card tablewrap"><h2>${this.t("categories_of")}</h2><p class="sub">${this.t("cat_active_help")}</p><table style="min-width:620px"><thead><tr>
+      <th>${this.t("category")}</th><th>${this.t("user_id")}</th><th>${this.t("fingerprints_title")}</th><th>${this.t("card")}</th><th>${this.t("code")}</th><th>${this.t("relay")}</th><th>${this.t("cat_active")}</th></tr></thead><tbody>
+      ${Object.keys(cats).map(Number).map((d) => { const c = p.categories.find((x) => x.digit === d);
+        return `<tr class="${off.has(d) ? "off" : ""}"><td>${this.catPill(d, this.catName(d))}</td><td class="mono">${c ? c.user_id : "—"}</td><td>${c ? c.fingers.length : 0}</td>
+        <td>${c?.card ? this.t("yes") : this.t("none")}</td><td>${c?.has_code ? this.t("yes") : this.t("none")}</td>
+        <td>${cats[String(d)]?.relay ? this.t("relay_yes") : this.t("relay_no")}</td>
+        <td><label class="chk"><input type="checkbox" data-act="toggle-cat" data-p="${p.num}" data-d="${d}" ${off.has(d) ? "" : "checked"} ${p.enabled ? "" : "disabled"}></label></td></tr>`; }).join("")}</tbody></table></section>`;
     const people = Object.keys(this._hass.states).filter((e) => e.startsWith("person.")).sort();
     const recent = this._s.history.filter((h) => h.person === p.num).slice(0, 8);
     return `<main>
