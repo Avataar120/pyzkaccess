@@ -91,6 +91,11 @@ async def test_enrollment_unassigned_and_fingers(hass: HomeAssistant, emulator, 
     garage = next(c for c in bob["categories"] if c["digit"] == 8)
     assert garage["fingers"] == [{"finger_id": 0, "size": 32, "physical": 6}]
 
+    await call("finger/update", user_id=128, finger_id=0, physical=7)   # integration-side change only
+    bob = (await call("state"))["snapshot"]["persons"][0]
+    assert next(c for c in bob["categories"] if c["digit"] == 8)["fingers"][0]["physical"] == 7
+    await call("finger/update", user_id=128, finger_id=0, physical=6)
+
     moved = await call("finger/update", user_id=128, finger_id=0, digit=0)
     assert moved == [120, 0]
     bob = (await call("state"))["snapshot"]["persons"][0]

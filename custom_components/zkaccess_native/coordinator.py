@@ -135,9 +135,12 @@ class ZKCoordinator(DataUpdateCoordinator[ZKData]):
                       events=events, snapshot=self.snapshot)
 
     @callback
-    def _apply_raw(self, raw: dict[str, Any]) -> None:
+    def _apply_raw(self, raw: dict[str, Any], force: bool = False) -> None:
+        """Rebuild the snapshot when the device content changed (or when ``force``:
+        integration-side data such as categories or physical fingers changed)."""
         digest = self.manager.fingerprint(raw)
-        if digest == self._raw_hash:
+        device_changed = digest != self._raw_hash
+        if not device_changed and not force:
             return
         first = self._raw_hash is None
         self._raw_hash = digest
@@ -155,7 +158,7 @@ class ZKCoordinator(DataUpdateCoordinator[ZKData]):
         self.store.data["known_user_ids"] = sorted(user_ids)
         self.store.save()
         async_dispatcher_send(self.hass, signal_changed(self.config_entry.entry_id))
-        if not first and self.store.data["backup"].get("on_change", True):
+        if device_changed and not first and self.store.data["backup"].get("on_change", True):
             # Debounced: several quick changes give one backup.
             if self._unsub_backup:
                 self._unsub_backup()
@@ -275,7 +278,7 @@ class ZKCoordinator(DataUpdateCoordinator[ZKData]):
         self._snapshot_at = time.monotonic()
         if silent:
             self.store.data["known_user_ids"] = sorted({u["Pin"] for u in raw["users"]})
-        self._apply_raw(raw)
+        self._apply_raw(raw, force=True)
 
     async def async_backup(self, reason: str) -> Optional[str]:
         try:
