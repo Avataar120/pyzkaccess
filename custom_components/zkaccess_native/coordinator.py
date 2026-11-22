@@ -24,10 +24,11 @@ from pyzkaccess_native import (AccessEvent, DeviceInfo, DoorStatus, RepeatDetect
 from pyzkaccess_native.events import DENIED_EVENTS, GRANTED_EVENTS
 
 from .const import (CONF_OPEN_SECONDS, CONF_POLL_INTERVAL, CONF_SYNC_CLOCK, DEFAULT_OPEN_SECONDS,
-                    DEFAULT_POLL_INTERVAL, DEFAULT_SYNC_CLOCK, DOMAIN, ENROLL_TIMEOUT_SECONDS,
-                    EVENT_ACCESS, IDENTIFY_TIMEOUT_SECONDS, PANEL_URL, POLL_INTERVAL_MAX, POLL_INTERVAL_MIN, PHONE_PAIR_TIMEOUT_SECONDS, TOGGLE_INACTIVE_STATES,
-                    RESULT_ACTION, RESULT_DENIED, RESULT_GRANTED, RESULT_OTHER,
-                    RETRY_MAX_SECONDS, RETRY_MIN_SECONDS, SNAPSHOT_REFRESH_SECONDS)
+                    DEFAULT_POLL_INTERVAL, DEFAULT_SYNC_CLOCK, DOMAIN, ENROLL_TIMEOUT_SECONDS, EVENT_ACCESS,
+                    IDENTIFY_PINS, IDENTIFY_TIMEOUT_SECONDS, PANEL_URL, PHONE_ECHO_SECONDS,
+                    PHONE_PAIR_TIMEOUT_SECONDS, POLL_INTERVAL_MAX, POLL_INTERVAL_MIN, RESULT_ACTION,
+                    RESULT_DENIED, RESULT_GRANTED, RESULT_OTHER, RETRY_MAX_SECONDS, RETRY_MIN_SECONDS,
+                    SNAPSHOT_REFRESH_SECONDS, TOGGLE_INACTIVE_STATES)
 from .manager import AccessManager
 from .store import AccessStore
 
@@ -101,6 +102,8 @@ class ZKCoordinator(DataUpdateCoordinator[ZKData]):
         #: finger identification in progress (reader events are not published meanwhile)
         self.identify: Optional[dict[str, Any]] = None
         self._identify_restoring = False
+        #: door -> deadline: the device's "remote opening" echo of a door opened for a phone
+        self._phone_echo: dict[int, float] = {}
         self._unsub_nightly: Optional[Callable[[], None]] = None
         self._unsub_backup: Optional[Callable[[], None]] = None
         self._unsub_tags: Optional[Callable[[], None]] = None
@@ -177,7 +180,7 @@ class ZKCoordinator(DataUpdateCoordinator[ZKData]):
             self._apply_raw(raw)
         if self.enrollment:
             self._update_enrollment(enrolled)
-        access = [r for r in records if isinstance(r, AccessEvent)]
+        access = [r for r in records if isinstance(r, AccessEvent) and not self._ignored(r)]
         if self.identify is not None:
             # Identification: the reader is used as a sensor only. Its events reach
             # neither the automations, nor the event entity, nor the history.
@@ -196,6 +199,18 @@ class ZKCoordinator(DataUpdateCoordinator[ZKData]):
         status = next((r for r in reversed(records) if isinstance(r, DoorStatus)), None)
         return ZKData(status=status or (self.data.status if self.data else None),
                       events=events, snapshot=self.snapshot)
+
+    def _ignored(self, ev: AccessEvent) -> bool:
+        """Device events that are not accesses of their own."""
+        if ev.user_id in IDENTIFY_PINS and self.identify is None:
+            return True  # temporary UserID of an identification that just ended
+        until = self._phone_echo.get(ev.door)
+        if until is not None and int(ev.event) == 8:
+            del self._phone_echo[ev.door]
+            # The device reports the door the integration opened for a phone as a
+            # "remote opening": the phone access is already in the history.
+            return time.monotonic() < until
+        return False
 
     @callback
     def _apply_raw(self, raw: dict[str, Any], force: bool = False) -> None:
@@ -407,6 +422,7 @@ class ZKCoordinator(DataUpdateCoordinator[ZKData]):
         if result == RESULT_GRANTED and (cat or {}).get("relay"):
             seconds = int(self.config_entry.options.get(CONF_OPEN_SECONDS, DEFAULT_OPEN_SECONDS))
             try:
+                self._phone_echo[door] = time.monotonic() + PHONE_ECHO_SECONDS
                 await self.async_run(self.manager.door_control, door, "open", seconds, refresh=False)
             except HomeAssistantError as ex:
                 _LOGGER.warning("Phone access: cannot open door %s: %s", door, ex)
@@ -463,7 +479,8 @@ class ZKCoordinator(DataUpdateCoordinator[ZKData]):
         try:
             return await self.async_run(self.manager.backup_create, reason, refresh=False)
         except HomeAssistantError as ex:
-            _LOGGER.warning("Backup of %s failed: %s", self.config_entry.title, ex)
+            _LOGGER.warning("Backup of %s failed: %s",
+                            self.config_entry.title.strip() or self.config_entry.unique_id, ex)
             return None
 
     def start_enrollment(self, user_id: int, baseline: list[int], physical: Optional[int]) -> dict[str, Any]:

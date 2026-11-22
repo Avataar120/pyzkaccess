@@ -162,6 +162,11 @@ async def test_phones_toggle_and_connectivity(hass: HomeAssistant, emulator, set
     ev = events[-1].data
     assert ev["result"] == "granted" and ev["method"] == "phone" and ev["person_name"] == "Alice"
     assert emulator.state.controls[-1][:3] == (1, 1, 1)       # relay category: the door is released
+    n = len(events)
+    await poll(hass, entry)                                   # the device echoes it as a remote opening (8)
+    assert len(events) == n                                   # ... which is not a second access
+    history = await call("history", limit=5)
+    assert [h["method"] for h in history[:1]] == ["phone"] and all(h.get("event") != 8 for h in history)
 
     hass.bus.async_fire("tag_scanned", {"tag_id": "tag-entrance", "device_id": "phone-1"})
     await hass.async_block_till_done()

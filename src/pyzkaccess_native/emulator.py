@@ -35,6 +35,7 @@ DEFAULT_TABLE_CONFIG = "\n".join([
     "firstcard=6,Pin=i1,DoorID=i2,TimezoneID=i3",
     "multimcard=7,Index=i1,DoorId=i2,Group1=i3,Group2=i4,Group3=i5,Group4=i6,Group5=i7",
     "inoutfun=8,Index=i1,EventType=i2,InAddr=i3,OutType=i4,OutAddr=i5,OutTime=i6,Reserved=i7",
+    "template=9,Size=i1,Pin=i2,FingerID=i3,Valid=i4,Template=s5",
     "templatev10=10,Size=i1,UID=i2,Pin=i3,FingerID=i4,Valid=i5,Template=B6,Resverd=i7,EndTag=i8",
 ])
 

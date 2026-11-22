@@ -206,3 +206,15 @@ def test_move_templates_refuses_without_room(dev):
     with pytest.raises(SafetyError):
         dev.move_templates(601, 600)
     assert len(dev.get_templates(601)) == 2 and len(dev.get_templates(600)) == 9
+
+
+def test_backup_skips_legacy_template_table(dev, emu):
+    from pyzkaccess_native import backup as zk_backup
+    dev.save_user(User(user_id=1, name="a"))
+    dev.save_template(Template(user_id=1, template=b"T" * 40))
+    emu.state.data["template"].append({"Size": 40, "Pin": 1, "FingerID": 0, "Valid": 1, "Template": "x"})
+    snap = zk_backup.backup(dev)
+    assert "templatev10" in snap["tables"] and "template" not in snap["tables"]
+    snap["tables"]["template"] = [{"Size": 1, "Pin": 9, "FingerID": 0, "Valid": 1, "Template": "y"}]
+    zk_backup.restore(dev, snap, wipe=True)                   # the firmware cache is left alone
+    assert emu.state.data["template"][0]["Pin"] == 1

@@ -23,6 +23,15 @@ FORMAT = "pyzkaccess-native/1"
 CONFIG_TABLES = ("timezone", "holiday", "user", "templatev10", "template", "userauthorize",
                  "firstcard", "multimcard", "inoutfun")
 LOG_TABLES = ("transaction", "oplog")
+# Legacy tables left out when their replacement exists. The MA500 (firmware 6.64) fills the
+# old ``template`` table by itself with pre-v10 templates keyed by internal slot, not by
+# UserID: it is a firmware cache, not data to back up or write back.
+LEGACY_TABLES = {"template": "templatev10"}
+
+
+def _skip_legacy(names: List[str], present: Iterable[str]) -> List[str]:
+    present = set(present)
+    return [n for n in names if LEGACY_TABLES.get(n) not in present]
 
 
 def _to_json(row: Row) -> Dict[str, Any]:
@@ -33,8 +42,8 @@ def backup(dev: ZKAccess, tables: Optional[Iterable[str]] = None,
            include_logs: bool = False) -> Dict[str, Any]:
     """Read the device and return a JSON-serializable snapshot."""
     available = dev.tables()
-    names = list(tables) if tables else [t for t in CONFIG_TABLES + (LOG_TABLES if include_logs else ())
-                                         if t in available]
+    names = list(tables) if tables else _skip_legacy(
+        [t for t in CONFIG_TABLES + (LOG_TABLES if include_logs else ()) if t in available], available)
     info = dev.info()
     return {
         "format": FORMAT,
@@ -76,6 +85,8 @@ def restore(dev: ZKAccess, snapshot: Dict[str, Any], tables: Optional[Iterable[s
     data = snapshot["tables"]
     names = [t for t in CONFIG_TABLES if t in data and (tables is None or t in tables)]
     names += [t for t in data if t not in names and t not in LOG_TABLES and (tables is None or t in tables)]
+    if tables is None:
+        names = _skip_legacy(names, data)
     unknown = [t for t in names if t not in dev.tables()]
     if unknown:
         raise SafetyError(f"the device has no table {unknown}")

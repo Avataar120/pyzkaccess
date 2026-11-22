@@ -24,6 +24,8 @@ IDENTIFY_TIMEOUT_SECONDS = 60  # per step of a finger identification
 # Temporary UserIDs used to tell apart the fingers of one UserID during an identification:
 # each template gets its own UserID, without access rights. Hidden from the panel.
 IDENTIFY_PINS = range(9990, 10000)
+# The device reports a door opened for a phone as a remote opening within this delay.
+PHONE_ECHO_SECONDS = 10
 #: Number of access events kept for the activity log.
 HISTORY_SIZE = 500
 

@@ -272,10 +272,15 @@ tr.click { cursor: pointer; } tr.click:hover td { background: color-mix(in srgb,
   justify-content: center; font-weight: 500; flex: none; }
 .mono { font-family: ui-monospace, monospace; }
 .warn { background: color-mix(in srgb, #f59e0b 12%, var(--zk-card)); border-color: color-mix(in srgb, #f59e0b 45%, transparent); }
-.hands { display: flex; flex-wrap: wrap; justify-content: center; gap: 44px; }
+.hands { container-type: inline-size; display: flex; flex-wrap: wrap; justify-content: center; align-items: stretch; gap: 24px 24px; }
 .hand { display: flex; flex-direction: column; align-items: center; gap: 8px; }
-.fingers { display: flex; align-items: flex-end; gap: 12px; }
+.hand > b { margin-top: auto; }
+.hand-sep { width: 3px; align-self: stretch; border-radius: 2px; background: var(--zk-line); }
+@container (max-width: 760px) { .hand-sep { display: none; } }
+.fingers { display: flex; align-items: flex-start; gap: 8px; }
 .fcol { display: flex; flex-direction: column; align-items: center; gap: 5px; width: 64px; }
+.ftip { height: 108px; display: flex; align-items: flex-end; }
+.fcol .pill { white-space: normal; text-align: center; justify-content: center; line-height: 1.2; padding: 3px 7px; max-width: 100%; }
 .finger { font: inherit; width: 52px; border-radius: 26px 26px 12px 12px; cursor: pointer; display: flex;
   align-items: flex-start; justify-content: center; padding-top: 10px; color: #fff; }
 .finger.free { background: transparent; border: 2px dashed var(--zk-muted); color: var(--zk-muted); font-size: 20px; }
@@ -873,8 +878,8 @@ class ZkAccessPanel extends HTMLElement {
       const f = this.fingerAt(i), key = FINGER_KEYS[i];
       const sel = s.finger && s.finger.physical === i;
       const style = `height:${FINGER_HEIGHT[key]}px;${f ? `background:${this.color(f.digit)}` : ""}`;
-      return `<div class="fcol"><button class="finger ${f ? "" : "free"} ${sel ? "sel" : ""}" data-act="finger" data-i="${i}" style="${style}"
-        aria-label="${esc(this.fingerName(i))}">${f ? `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 11v4"/><path d="M8 15v-3a4 4 0 0 1 8 0v4"/><path d="M5 14v-2a7 7 0 0 1 14 0v5"/></svg>` : "+"}</button>
+      return `<div class="fcol"><div class="ftip"><button class="finger ${f ? "" : "free"} ${sel ? "sel" : ""}" data-act="finger" data-i="${i}" style="${style}"
+        aria-label="${esc(this.fingerName(i))}">${f ? `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 11v4"/><path d="M8 15v-3a4 4 0 0 1 8 0v4"/><path d="M5 14v-2a7 7 0 0 1 14 0v5"/></svg>` : "+"}</button></div>
         <span class="fname">${this.t("finger_" + key)}</span>${f && !this.plain() ? this.catPill(f.digit, this.catName(f.digit)) : ""}</div>`;
     }).join("");
     return `<div class="hand"><div class="fingers">${html}</div><b class="muted">${label}</b></div>`;
@@ -932,7 +937,7 @@ class ZkAccessPanel extends HTMLElement {
       <div class="cols"><div class="grow">
         <section class="card"><div class="row"><h2 style="margin:0">${this.t("fingerprints_title")}</h2>
           <button class="btn sm" style="margin-left:auto" data-act="identify-start">${this.t("identify")}</button></div><p class="sub">${this.t("fingers_help")}</p>
-          <div class="hands">${this.renderHand(0, 4, this.t("left_hand"))}${this.renderHand(5, 9, this.t("right_hand"))}</div>${detail}${unplacedHtml}</section>
+          <div class="hands">${this.renderHand(0, 4, this.t("left_hand"))}<div class="hand-sep" aria-hidden="true"></div>${this.renderHand(5, 9, this.t("right_hand"))}</div>${detail}${unplacedHtml}</section>
         ${table}</div>
       <div class="side">
         <section class="card"><h2>${this.t("identity")}</h2><div style="display:flex;flex-direction:column;gap:12px">

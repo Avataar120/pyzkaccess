@@ -28,6 +28,14 @@
   UserIDs (9990-9999) without rights, then restored and checked (also after a restart).
 - Home Assistant integration: the reader polling interval can be set in the panel's
   Settings (0.3 to 3 s; also in the integration options) and applies without a reload.
+- Backups no longer fail with "truncated record in table 'template'": the legacy
+  `template` table is left out when `templatev10` exists (the MA500 fills it by itself with
+  pre-v10 templates keyed by internal slot, a firmware cache), at backup and at restore.
+- Home Assistant integration: a phone access that releases the door no longer adds a
+  second "Remote opening" line (the device's echo of that command is ignored), and events
+  of the temporary UserIDs of an identification never reach the history.
+- Panel: fingers are aligned whether enrolled or not, and a vertical line separates the
+  two hands on wide screens.
 
 ## 0.3.0 - 2026-11-22
 
