@@ -47,6 +47,13 @@
 - Second presentation: the gap is measured with the device's time of each event, not when
   Home Assistant receives it (polling no longer adds to it), and the default delay is
   5 s instead of 3 s (`RepeatDetector(window=5.0)`; `check(key, when=...)` takes a timestamp).
+- Library: `scan(networks)` finds devices on any subnet by trying TCP port 4370 on each
+  address of the ranges (in parallel, at most /22 each) and reading their identity;
+  CLI `zkaccess scan 192.168.5.0/24`. UDP `discover()` only reaches the same subnet.
+- Home Assistant integration: adding a device starts with a search (UDP broadcast, plus a
+  TCP scan of Home Assistant's subnet and of the ranges you type), then the device is
+  picked from a list or entered by hand. Devices already configured are left out. A blank
+  device name no longer gives a blank entry title.
 - Panel: no more confirmation when a category's *Device relay* is unchecked (it only
   changes the device's own output; automations receive `action` instead of `granted`).
 - README and `examples/home_assistant_automations.yaml`: automations for fingerprints,

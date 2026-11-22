@@ -218,3 +218,21 @@ def test_backup_skips_legacy_template_table(dev, emu):
     snap["tables"]["template"] = [{"Size": 1, "Pin": 9, "FingerID": 0, "Valid": 1, "Template": "y"}]
     zk_backup.restore(dev, snap, wipe=True)                   # the firmware cache is left alone
     assert emu.state.data["template"][0]["Pin"] == 1
+
+
+def test_scan_finds_device_over_tcp(emu):
+    from pyzkaccess_native import scan
+    found = scan(["127.0.0.1/32"], port=emu.port)
+    assert [(d.ip, d.serial_number) for d in found] == [("127.0.0.1", "EMU0000000001")]
+    emu.state.password = "1234"
+    found = scan(["127.0.0.1/32"], port=emu.port)
+    assert found[0].serial_number is None and found[0].raw["auth"] == "required"
+    assert scan(["127.0.0.1/32"], port=1) == []               # nothing listening
+
+
+def test_scan_refuses_bad_ranges():
+    from pyzkaccess_native import scan
+    with pytest.raises(ValueError):
+        scan(["10.0.0.0/16"])                                 # too large
+    with pytest.raises(ValueError):
+        scan(["not-a-network"])

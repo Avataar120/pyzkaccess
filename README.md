@@ -253,9 +253,15 @@ backup.restore(dev, backup.load("device.json"), wipe=True)  # exact copy
 ### Discovery
 
 ```python
-from pyzkaccess_native import discover
-discover()     # UDP broadcast; only finds devices on the same subnet
+from pyzkaccess_native import discover, scan
+discover()                    # UDP broadcast: devices on the same subnet only
+scan(["192.168.5.0/24"])      # TCP port 4370 on each address: works across routers / VLANs
 ```
+
+`scan()` tries the device port on every address of the ranges (at most a /22 each, in
+parallel: a /24 takes a few seconds), then opens a session to read the serial number and
+firmware. A device that needs a communication password is listed with
+`raw["auth"] == "required"`.
 
 ### Errors
 
@@ -273,7 +279,8 @@ zkaccess [--host HOST] [--port 4370] [--password PWD] [-v|-vv] <command>
 
 | Command | Description |
 |---|---|
-| `discover` | find devices on the local network |
+| `discover` | find devices on the local network (UDP broadcast) |
+| `scan 192.168.5.0/24` | find devices on any subnet (TCP port 4370) |
 | `info` | serial number, firmware, doors, readers... |
 | `tables` | tables and fields supported by the device |
 | `params NAME... / NAME=VALUE...` | read / write parameters |
@@ -316,8 +323,10 @@ cards and codes without any YAML.
 1. HACS → ⋮ → **Custom repositories** → add `https://github.com/Avataar120/pyzkaccess`,
    type **Integration**.
 2. Install **ZKAccess Native** and restart Home Assistant.
-3. **Settings → Devices & services → Add integration → ZKAccess Native**, enter the IP
-   address (and the communication password, if any).
+3. **Settings → Devices & services → Add integration → ZKAccess Native**. The integration
+   searches for devices: UDP broadcast on Home Assistant's network, and TCP port 4370 on
+   its subnet plus any range you add (e.g. `192.168.5.0/24` for a device on another subnet
+   or VLAN). Pick the device (or enter its address), then the communication password if any.
 4. Open **Access control** in the sidebar.
 
 ### People and action categories
@@ -579,7 +588,7 @@ device-assigned slots, buffered transfers...), but the real device remains the r
 | `device error -14` | wrong communication password (`ComPwd`). |
 | `device error -13` | command not supported by this firmware. |
 | no event received | check the polling loop is running; time zone / authorization of the user (event 23 = access denied). |
-| `discover()` finds nothing | broadcasts do not cross routers; connect by IP. |
+| `discover()` finds nothing | broadcasts do not cross routers: use `scan()` with the device's range, or connect by IP. |
 | clock drifts | call `set_time()` daily (the integration does it on each connection). |
 
 Run with `-vv` (CLI) or `logging.getLogger("pyzkaccess_native").setLevel("DEBUG")` to see

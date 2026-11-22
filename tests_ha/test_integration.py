@@ -1,4 +1,5 @@
 """Config flow, entities, events and services of the zkaccess_native integration."""
+import pytest
 from homeassistant import config_entries
 from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_PORT
 from homeassistant.core import HomeAssistant
@@ -9,9 +10,31 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry, async_
 from custom_components.zkaccess_native.const import DOMAIN, EVENT_ACCESS
 
 
-async def test_config_flow(hass: HomeAssistant, emulator):
+@pytest.fixture
+def search(monkeypatch, emulator):
+    """The search finds the emulator (no real network scan in tests)."""
+    from pyzkaccess_native import DiscoveredDevice
+    calls = []
+
+    def fake_search(networks, port):
+        calls.append(networks)
+        return [DiscoveredDevice("127.0.0.1", None, "EMU0000000001", "Emu", "Emulator 1.0", {})]
+
+    async def fake_own(hass):
+        return ["192.168.1.0/24"]
+    monkeypatch.setattr("custom_components.zkaccess_native.config_flow._search", fake_search)
+    monkeypatch.setattr("custom_components.zkaccess_native.config_flow._own_networks", fake_own)
+    return calls
+
+
+async def test_config_flow_search(hass: HomeAssistant, emulator, search):
     result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
-    assert result["type"] is FlowResultType.FORM
+    assert result["type"] is FlowResultType.FORM and result["step_id"] == "user"
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {"networks": "192.168.5.0/24"})
+    assert search == [["192.168.1.0/24", "192.168.5.0/24"]]
+    assert result["step_id"] == "select"
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {"device": "127.0.0.1"})
+    assert result["step_id"] == "connect"
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {CONF_HOST: "127.0.0.1", CONF_PORT: emulator.port, CONF_PASSWORD: ""})
     assert result["type"] is FlowResultType.CREATE_ENTRY
@@ -20,8 +43,13 @@ async def test_config_flow(hass: HomeAssistant, emulator):
     await hass.config_entries.async_unload(result["result"].entry_id)
 
 
-async def test_config_flow_cannot_connect(hass: HomeAssistant, socket_enabled):
+async def test_config_flow_invalid_range_and_manual(hass: HomeAssistant, emulator, search):
     result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {"networks": "192.168.5"})
+    assert result["errors"] == {"networks": "invalid_network"}
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {"networks": ""})
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {"device": "manual"})
+    assert result["step_id"] == "connect"
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {CONF_HOST: "127.0.0.1", CONF_PORT: 1, CONF_PASSWORD: ""})
     assert result["errors"] == {"base": "cannot_connect"}

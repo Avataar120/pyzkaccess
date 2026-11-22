@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional
 
 from . import __version__, backup as backup_mod
 from .client import ZKAccess
-from .discovery import discover
+from .discovery import discover, scan
 from .errors import ZKError
 from .events import AccessEvent
 from .models import User
@@ -68,6 +68,8 @@ def build_parser() -> argparse.ArgumentParser:
     sub = p.add_subparsers(dest="cmd", required=True)
 
     sub.add_parser("discover", help="find devices on the local network (UDP broadcast)")
+    sc = sub.add_parser("scan", help="find devices on any subnet: try TCP port 4370 on ranges")
+    sc.add_argument("networks", nargs="+", help="ranges such as 192.168.5.0/24 (at most /22 each)")
     sub.add_parser("info", help="device identity and capabilities")
     sub.add_parser("tables", help="list tables and their fields")
 
@@ -142,10 +144,17 @@ def _confirm(question: str, assume_yes: bool) -> bool:
 
 
 def run(args: argparse.Namespace) -> int:
-    if args.cmd == "discover":
-        devices = discover()
-        _print_rows([{"ip": d.ip, "mac": d.mac, "serial": d.serial_number, "name": d.device_name,
-                      "firmware": d.firmware} for d in devices], False)
+    if args.cmd in ("discover", "scan"):
+        if args.cmd == "discover":
+            devices = discover()
+        else:
+            try:
+                devices = scan(args.networks, port=args.port, password=args.password)
+            except ValueError as ex:
+                print(f"error: {ex}", file=sys.stderr)
+                return 2
+        _print_rows([{"ip": d.ip, "mac": d.mac, "serial": d.serial_number or d.raw.get("auth"),
+                      "name": (d.device_name or "").strip(), "firmware": d.firmware} for d in devices], False)
         return 0
     if not args.host:
         print("error: --host (or $ZKACCESS_HOST) is required", file=sys.stderr)

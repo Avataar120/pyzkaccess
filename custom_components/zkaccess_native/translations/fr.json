@@ -2,8 +2,25 @@
   "config": {
     "step": {
       "user": {
-        "title": "Connexion à un appareil ZKTeco",
-        "description": "Appareil PullSDK / ZKAccess (C3, inBio, MA500...) joignable en TCP. Ne gérez pas l'appareil depuis ZKAccess en même temps.",
+        "title": "Rechercher un appareil ZKTeco",
+        "description": "Recherche des appareils PullSDK / ZKAccess (C3, inBio, MA500...) : broadcast sur le réseau de Home Assistant et test du port TCP 4370 sur {own}. Un appareil d'un autre sous-réseau ou VLAN est trouvé si vous ajoutez sa plage ci-dessous. Ne gérez pas l'appareil depuis ZKAccess en même temps.",
+        "data": {
+          "networks": "Autres plages à rechercher (facultatif)"
+        },
+        "data_description": {
+          "networks": "Ex. 192.168.5.0/24, séparées par des virgules (au plus /22 chacune)."
+        }
+      },
+      "select": {
+        "title": "Appareil",
+        "description": "{count} appareil(s) trouvé(s) et non encore configuré(s).",
+        "data": {
+          "device": "Appareil"
+        }
+      },
+      "connect": {
+        "title": "Connexion à l'appareil",
+        "description": "Vérifiez l'adresse et saisissez le mot de passe de communication s'il y en a un.",
         "data": {
           "host": "Hôte",
           "port": "Port",
@@ -17,7 +34,8 @@
     },
     "error": {
       "cannot_connect": "Connexion impossible.",
-      "invalid_auth": "Mot de passe de communication incorrect."
+      "invalid_auth": "Mot de passe de communication incorrect.",
+      "invalid_network": "Plage invalide (ex. 192.168.5.0/24, au plus /22)."
     },
     "abort": {
       "already_configured": "Cet appareil est déjà configuré."
@@ -211,6 +229,13 @@
           "name": "Appareil",
           "description": "L'appareil ZKAccess."
         }
+      }
+    }
+  },
+  "selector": {
+    "device": {
+      "options": {
+        "manual": "Saisir l'adresse"
       }
     }
   }

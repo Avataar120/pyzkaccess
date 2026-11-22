@@ -2,8 +2,25 @@
   "config": {
     "step": {
       "user": {
-        "title": "Connect to a ZKTeco device",
-        "description": "PullSDK / ZKAccess device (C3, inBio, MA500...) reachable over TCP. Do not manage the device from ZKAccess at the same time.",
+        "title": "Search for a ZKTeco device",
+        "description": "Looks for PullSDK / ZKAccess devices (C3, inBio, MA500...): broadcast on Home Assistant's network and TCP port 4370 tried on {own}. A device on another subnet or VLAN is found when you add its range below. Do not manage the device from ZKAccess at the same time.",
+        "data": {
+          "networks": "Other ranges to search (optional)"
+        },
+        "data_description": {
+          "networks": "E.g. 192.168.5.0/24, comma separated (at most /22 each)."
+        }
+      },
+      "select": {
+        "title": "Device",
+        "description": "{count} device(s) found and not configured yet.",
+        "data": {
+          "device": "Device"
+        }
+      },
+      "connect": {
+        "title": "Connect to the device",
+        "description": "Check the address and enter the communication password if there is one.",
         "data": {
           "host": "Host",
           "port": "Port",
@@ -11,13 +28,14 @@
         },
         "data_description": {
           "host": "IP address of the device.",
-          "password": "Leave empty if no communication password is set."
+          "password": "Leave empty when there is no communication password."
         }
       }
     },
     "error": {
       "cannot_connect": "Cannot connect to the device.",
-      "invalid_auth": "Wrong communication password."
+      "invalid_auth": "Wrong communication password.",
+      "invalid_network": "Invalid range (e.g. 192.168.5.0/24, at most /22)."
     },
     "abort": {
       "already_configured": "This device is already configured."
@@ -211,6 +229,13 @@
           "name": "Device",
           "description": "The ZKAccess device."
         }
+      }
+    }
+  },
+  "selector": {
+    "device": {
+      "options": {
+        "manual": "Enter the address"
       }
     }
   }

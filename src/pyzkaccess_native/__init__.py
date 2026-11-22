@@ -4,7 +4,7 @@ No DLL, no Windows: talks the device's TCP protocol directly.
 """
 from .client import DeviceInfo, DoorSettings, ZKAccess
 from .codec import Field, Table, decode_datetime, encode_datetime
-from .discovery import DiscoveredDevice, discover
+from .discovery import DiscoveredDevice, discover, scan
 from .errors import DeviceError, ProtocolError, SafetyError, ZKConnectionError, ZKError
 from .events import (AccessEvent, DoorSensor, DoorStatus, EventType, InOutState, RepeatDetector,
                      VerifyMode, event_label)
@@ -14,7 +14,7 @@ from .people import CategoryScheme
 __version__ = "0.3.0"
 
 __all__ = [
-    "ZKAccess", "DeviceInfo", "DoorSettings", "discover", "DiscoveredDevice", "CategoryScheme",
+    "ZKAccess", "DeviceInfo", "DoorSettings", "discover", "scan", "DiscoveredDevice", "CategoryScheme",
     "RepeatDetector",
     "User", "Template", "Authorization",
     "AccessEvent", "DoorStatus", "DoorSensor", "EventType", "VerifyMode", "InOutState", "event_label",

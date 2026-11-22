@@ -21,6 +21,9 @@ Reference hardware: ZKTeco MA500 (fingerprint + RFID reader, one door), firmware
 
 - TCP, port **4370** by default **[verified]**.
 - Discovery: a UDP broadcast to port **65535** **[assumed on the MA500, documented for C3]**.
+  From another subnet the MA500 does not answer, not even to a request sent to its own
+  address **[verified]**: the reply may be a broadcast, or UDP 65535 may be filtered by the
+  router. A TCP scan of port 4370 (`scan()`) finds it across routers **[verified]**.
 - The reference device accepted **two simultaneous sessions** **[verified]**. Real-time
   log events are delivered **to every open session** **[verified]**: two programs polling
   the same device both see each event (keep that in mind if one of them acts on events).
@@ -235,9 +238,18 @@ The answer is a sequence of 16-byte records **[verified]**:
 A status record is returned on every poll. Each event is returned once; poll often (e.g.
 every 300 ms to 1 s) to get them promptly.
 
-Event codes observed on the reference device: **0** normal open (card), **7** cancel alarm,
-**8** remote opening, **14** fingerprint open, **27** unregistered card (UserID 0, the card
-number is in bytes 0-3), **34** unregistered fingerprint (UserID 0), **255** status.
+Event codes observed on the reference device (MA500):
+
+| Code | Meaning | UserID | Notes |
+|---:|---|---|---|
+| 0 | Normal open (card) | the card's UserID | |
+| 7 | Cancel alarm | 0 | |
+| 8 | Remote opening | 0 | also the echo of a door opened by a control command |
+| 14 | Fingerprint open | the UserID | |
+| 23 | Access denied: recognized, no right to open | the UserID | UserID without `userauthorize` (verified with a fingerprint; expected for a card or code) |
+| 27 | Unregistered card | 0 | the card number is in bytes 0-3 |
+| 34 | Unregistered fingerprint | 0 | |
+| 255 | Status record | | door and alarm state, returned on every poll |
 
 The `transaction` table keeps every event (tens of thousands of rows). A filtered read
 (`08` with a condition) on it can take more than 5 seconds, during which the device answers
