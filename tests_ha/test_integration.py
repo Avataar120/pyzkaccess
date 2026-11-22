@@ -40,6 +40,13 @@ async def test_config_flow_search(hass: HomeAssistant, emulator, search):
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["result"].unique_id == "EMU0000000001"
     await hass.async_block_till_done()
+    # Searching again lists it as already configured; picking it stops there.
+    again = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
+    again = await hass.config_entries.flow.async_configure(again["flow_id"], {"networks": ""})
+    labels = [o["label"] for o in again["data_schema"].schema["device"].config["options"]]
+    assert labels[0].endswith("(already configured)")
+    again = await hass.config_entries.flow.async_configure(again["flow_id"], {"device": "127.0.0.1"})
+    assert again["type"] is FlowResultType.ABORT and again["reason"] == "already_configured"
     await hass.config_entries.async_unload(result["result"].entry_id)
 
 

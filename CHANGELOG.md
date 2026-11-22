@@ -52,7 +52,7 @@
   CLI `zkaccess scan 192.168.5.0/24`. UDP `discover()` only reaches the same subnet.
 - Home Assistant integration: adding a device starts with a search (UDP broadcast, plus a
   TCP scan of Home Assistant's subnet and of the ranges you type), then the device is
-  picked from a list or entered by hand. Devices already configured are left out. A blank
+  picked from a list or entered by hand. Devices already configured are listed as such. A blank
   device name no longer gives a blank entry title.
 - Panel: no more confirmation when a category's *Device relay* is unchecked (it only
   changes the device's own output; automations receive `action` instead of `granted`).

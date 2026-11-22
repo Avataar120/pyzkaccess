@@ -13,7 +13,7 @@
       },
       "select": {
         "title": "Device",
-        "description": "{count} device(s) found and not configured yet.",
+        "description": "{count} device(s) found. A device already set up is marked as such.",
         "data": {
           "device": "Device"
         }

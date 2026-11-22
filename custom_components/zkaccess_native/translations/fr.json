@@ -13,7 +13,7 @@
       },
       "select": {
         "title": "Appareil",
-        "description": "{count} appareil(s) trouvé(s) et non encore configuré(s).",
+        "description": "{count} appareil(s) trouvé(s). Un appareil déjà configuré est indiqué comme tel.",
         "data": {
           "device": "Appareil"
         }

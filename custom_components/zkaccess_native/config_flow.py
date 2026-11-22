@@ -95,8 +95,6 @@ class ZKAccessConfigFlow(ConfigFlow, domain=DOMAIN):
             except ValueError:
                 errors[CONF_NETWORKS] = "invalid_network"
             else:
-                configured = {e.unique_id for e in self._async_current_entries()}
-                self._found = [d for d in self._found if not d.serial_number or d.serial_number not in configured]
                 return await self.async_step_select()
         schema = vol.Schema({vol.Optional(CONF_NETWORKS, default=""): str})
         return self.async_show_form(step_id="user", data_schema=self.add_suggested_values_to_schema(
@@ -104,11 +102,18 @@ class ZKAccessConfigFlow(ConfigFlow, domain=DOMAIN):
             description_placeholders={"own": ", ".join(own) or "-"})
 
     async def async_step_select(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        configured = {e.unique_id for e in self._async_current_entries()}
         if user_input is not None:
             choice = user_input[CONF_DEVICE]
+            dev = next((d for d in self._found if d.ip == choice), None)
+            if dev and dev.serial_number in configured:
+                return self.async_abort(reason="already_configured")
             self._host = None if choice == MANUAL else choice
             return await self.async_step_connect()
-        options = [SelectOptionDict(value=d.ip, label=_label(d)) for d in self._found if d.ip]
+        # Devices already set up stay listed (marked): the search visibly found them.
+        options = [SelectOptionDict(value=d.ip, label=_label(d) + (" (already configured)"
+                                                                   if d.serial_number in configured else ""))
+                   for d in self._found if d.ip]
         options.append(SelectOptionDict(value=MANUAL, label=MANUAL))
         return self.async_show_form(step_id="select", data_schema=vol.Schema({
             vol.Required(CONF_DEVICE, default=options[0]["value"]): SelectSelector(SelectSelectorConfig(
