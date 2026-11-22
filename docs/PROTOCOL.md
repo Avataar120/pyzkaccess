@@ -301,6 +301,16 @@ Observed with ZKAccess 3.5.5:
 
 ## 11. Readers with a keypad (MA500)
 
+Keypad enrollment **[verified]**: menu `1` (add) only creates a **new** user and refuses an
+existing UserID (red LED, beeps). Menu `3` (backup fingerprint) adds a fingerprint to an
+**existing** user: the device stores it with the next free `FingerID` (0, 1, 2... in
+enrollment order, not a physical finger). Menu `3` also works for a user created over the
+network that has no fingerprint yet (`FingerID` 0).
+
+A fingerprint recognized for a user **without authorization** gives event **23** (access
+denied) with the UserID **[verified]**: an application can use it as a credential that does not
+release the door.
+
 Users enrolled on the device keypad get no name, and an automatic authorization
 (time zone 1, door 1). An RFID card enrolled on the keypad fills `CardNo` even when the
 `~RFCardOn` parameter reads 0.

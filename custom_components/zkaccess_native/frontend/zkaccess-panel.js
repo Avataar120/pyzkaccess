@@ -45,7 +45,7 @@ const I18N = {
     confirm_delete_person: "Delete {name} and all their credentials?",
     add_fingerprint: "Add a fingerprint", category_of_finger: "Category of this finger",
     no_relay_note: "“{c}” does not trigger the device relay: only Home Assistant reacts.",
-    on_keypad: "On the device keypad, type:", admin_code: "admin code", add: "add",
+    on_keypad: "On the device keypad, type:", admin_code: "admin code", add: "backup fingerprint",
     place_finger: "place the finger <b>3 times</b>", eq_person_cat: "= person <b>{p}</b> + category <b>{d} ({c})</b>",
     start: "Start", waiting: "Waiting for the new fingerprint on the device…", enrolled: "Fingerprint enrolled.",
     timeout: "No new fingerprint after 5 minutes. Try again.",
@@ -118,7 +118,7 @@ const I18N = {
     confirm_delete_person: "Supprimer {name} et tous ses identifiants ?",
     add_fingerprint: "Ajouter une empreinte", category_of_finger: "Catégorie de ce doigt",
     no_relay_note: "« {c} » n'active pas le relais du lecteur : seul Home Assistant réagit.",
-    on_keypad: "Sur le clavier du lecteur, tapez :", admin_code: "code admin", add: "ajouter",
+    on_keypad: "Sur le clavier du lecteur, tapez :", admin_code: "code admin", add: "doigt de secours",
     place_finger: "posez le doigt <b>3 fois</b>", eq_person_cat: "= personne <b>{p}</b> + catégorie <b>{d} ({c})</b>",
     start: "Commencer", waiting: "En attente de la nouvelle empreinte sur le lecteur…", enrolled: "Empreinte enregistrée.",
     timeout: "Aucune nouvelle empreinte après 5 minutes. Réessayez.",
@@ -887,9 +887,10 @@ class ZkAccessPanel extends HTMLElement {
           : m.step === "done" ? `<div class="row" style="color:#067647;font-weight:500">✓ ${this.t("enrolled")}</div>`
           : `<div class="row" style="color:#b42318">${this.t("timeout")}</div>`;
         inner = `${head}<b style="font-weight:500">${this.t("on_keypad")}</b>
-          <div class="row muted"><span class="key">*</span><span class="key">#</span>${this.t("admin_code")} → <span class="key">1</span>${this.t("add")} → ${digits}<span class="key">#</span> → ${this.t("place_finger")}</div>
+          <div class="row muted"><span class="key">*</span><span class="key">#</span>${this.t("admin_code")} → <span class="key">3</span>${this.t("add")} → ${digits}<span class="key">#</span> → ${this.t("place_finger")}</div>
           ${this.plain() ? "" : `<div class="muted"><span class="mono" style="font-size:20px;font-weight:700;color:var(--zk-accent)">${m.user_id}</span> ${this.t("eq_person_cat", { p: m.person, d: m.digit, c: esc(cat?.name || "") })}</div>`}
           ${cat && !cat.relay ? `<div class="muted">${this.t("no_relay_note", { c: esc(cat.name) })}</div>` : ""}
+          <div class="muted">${this.t("keypad_note")}</div>
           ${status}<div class="actions"><button class="btn ${m.step === "done" ? "primary" : ""}" data-act="enroll-cancel">${m.step === "done" ? this.t("done") : this.t("cancel")}</button></div>`;
       }
     } else if (m.kind === "card") {

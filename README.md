@@ -338,8 +338,9 @@ person 12 + category 3 (Arm)   -> UserID 123
 - On the keypad, the code is typed after the UserID, so a person can reuse the same code in
   every category.
 - Each category says whether it **triggers the device relay**. "Open" does; an "Arm" finger
-  usually should not open the door: the device then refuses it, and the integration turns
-  that refusal into an `action` event for Home Assistant.
+  usually should not open the door: the device then refuses it (event 23 with the UserID,
+  verified on the MA500), and the integration turns that refusal into an `action` event for
+  Home Assistant.
 - **Second presentation** (per category): presenting the same card or finger again within a
   few seconds runs a second category *in addition*. Example: badge once to open the gate,
   twice to open the gate and then lock and arm the house.
@@ -358,8 +359,11 @@ Prefer one UserID per person, without categories? Choose **One UserID per person
 
 **Enrolling a fingerprint.** Fingerprints are captured by the device itself (there is no
 remote enrollment command). Click a free finger on the hand, pick its category: the page
-shows the exact keys to type on the device keypad (`* #`, admin code, `1`, the UserID, `#`)
-and detects the new fingerprint by itself.
+shows the exact keys to type on the device keypad (`* #`, admin code, `3`, the UserID, `#`)
+and detects the new fingerprint by itself. The page creates the UserID first, so the keypad
+menu is `3` (backup fingerprint, adds a finger to an existing user); menu `1` (add user)
+refuses an existing UserID. A UserID can hold several fingers: enroll them one after the
+other with menu `3`.
 
 **Learning a card.** Click *Learn a card* and present the card: the device reports it as
 unknown, the page shows its number and writes it to the chosen person and category.

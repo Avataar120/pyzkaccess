@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.1 - 2026-11-22
+
+- Enrollment wizard: the keypad menu is `3` (backup fingerprint), not `1` (add user). The
+  page creates the UserID first and menu `1` refuses an existing UserID (verified on the
+  MA500, as well as several fingers per UserID with menu `3`).
+- Docs: keypad enrollment, event 23 for a known credential without access rights, events
+  27 / 34 for unknown cards and fingerprints, slow filtered reads of the `transaction` table.
+
 ## 0.2.0 - 2026-11
 
 ### Home Assistant integration
