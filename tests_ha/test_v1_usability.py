@@ -1,4 +1,6 @@
 """Reconfigure / reauth / DHCP, device triggers, person switch, model services, door entities."""
+import time
+
 import pytest
 from homeassistant import config_entries
 from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_PORT
@@ -170,10 +172,20 @@ async def test_restart_and_response_time(hass: HomeAssistant, emulator, entry, m
     assert emulator.state.controls[-1][0] == 3                      # control op 3 = reboot
     assert coord.store.data["last_restart"]["reason"] == "button"
     assert not coord.client.connected                               # waits for the device to boot
+    # While it boots: an action of the user stops at once with a message...
+    from homeassistant.exceptions import HomeAssistantError
+    device = dr.async_get(hass).async_get_device({(DOMAIN, "EMU0000000001")})
+    with pytest.raises(HomeAssistantError) as err:
+        await hass.services.async_call(DOMAIN, "sync_clock", {"device_id": device.id}, blocking=True)
+    assert err.value.translation_key == "device_rebooting"
+    # ... while an internal one waits for the end of the boot (shortened here).
+    coord._boot_until = time.monotonic() + 0.2
+    assert await coord.async_run(lambda: "done", refresh=False, background=True) == "done"
+    coord._boot_until = None
 
-    # Monotonic clock just after boot (CI runners, a freshly started host): the cool-down must
-    # not block the first automatic reboot.
-    monkeypatch.setattr("custom_components.zkaccess_native.coordinator.time.monotonic", lambda: 60.0)
+    # No automatic reboot yet: the cool-down does not apply, whatever the host's uptime (the
+    # first automatic reboot used to be blocked during the first 6 h after the host booted).
+    assert coord._last_auto_restart is None
     # Hourly check: fast device -> measured, no reboot.
     n = len(emulator.state.controls)
     assert await coord.async_check_response_time() is not None
@@ -183,6 +195,7 @@ async def test_restart_and_response_time(hass: HomeAssistant, emulator, entry, m
     monkeypatch.setattr(coord, "_measure_response", lambda: 0.8)
     await coord.async_check_response_time()
     assert len(emulator.state.controls) == n + 1 and coord.store.data["last_restart"]["reason"] == "slow"
+    coord._boot_until = None                                        # skip the 25 s boot wait
     await coord.async_check_response_time()
     assert len(emulator.state.controls) == n + 1
     # Option off -> no reboot even when slow.

@@ -15,7 +15,7 @@ from pyzkaccess_native import User
 from . import websocket
 from .const import DOMAIN
 from .coordinator import ZKCoordinator
-from .panel import async_register_panel, async_rename_panel, async_unregister_panel
+from .panel import async_register_panel, async_unregister_panel
 from .store import AccessStore
 
 PLATFORMS = [Platform.BINARY_SENSOR, Platform.BUTTON, Platform.EVENT, Platform.SENSOR, Platform.SWITCH]

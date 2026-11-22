@@ -8,6 +8,7 @@ person, and the activity history.
 from __future__ import annotations
 
 import copy
+import threading
 from typing import Any
 
 from homeassistant.core import HomeAssistant
@@ -48,6 +49,7 @@ class AccessStore:
     """Persistent JSON store, one per configured device."""
 
     def __init__(self, hass: HomeAssistant, entry_id: str) -> None:
+        self._hass = hass
         self._store: Store[dict[str, Any]] = Store(hass, STORAGE_VERSION, f"{DOMAIN}.{entry_id}")
         self.data: dict[str, Any] = copy.deepcopy(DEFAULTS)
 
@@ -60,11 +62,27 @@ class AccessStore:
         self.data["categories"].setdefault("0", copy.deepcopy(DEFAULT_CATEGORIES["0"]))
 
     def save(self, delay: float = 1.0) -> None:
-        self._store.async_delay_save(lambda: self.data, delay)
+        """Schedule a write. Callable from any thread: device operations run in the executor
+        and change the data there, while Home Assistant's delayed save must be scheduled
+        from the event loop."""
+        if threading.get_ident() == self._hass.loop_thread_id:
+            self._store.async_delay_save(self._snapshot, delay)
+        else:
+            self._hass.loop.call_soon_threadsafe(self._store.async_delay_save, self._snapshot, delay)
+
+    def _snapshot(self) -> dict[str, Any]:
+        """A copy of the data, taken in the event loop: the file is written from it while a
+        device operation may keep changing the live data in the executor."""
+        for _ in range(5):
+            try:
+                return copy.deepcopy(self.data)
+            except RuntimeError:  # changed by an executor thread during the copy: try again
+                continue
+        return copy.deepcopy(self.data)
 
     async def async_save_now(self) -> None:
         """Write to disk at once (for state that must survive a crash)."""
-        await self._store.async_save(self.data)
+        await self._store.async_save(self._snapshot())
 
     async def async_remove(self) -> None:
         await self._store.async_remove()

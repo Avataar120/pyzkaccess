@@ -4,15 +4,14 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from dataclasses import dataclass, field
 from datetime import timedelta
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Mapping, Optional, TypeVar
+from typing import Any, Callable, Optional, TypeVar
 
 from homeassistant.components import persistent_notification
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_PORT
-from homeassistant.core import Event, HomeAssistant, callback
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.dispatcher import async_dispatcher_send
@@ -24,63 +23,23 @@ from pyzkaccess_native import (AccessEvent, DeviceError, DeviceInfo, DoorStatus,
                                ZKConnectionError, ZKError)
 from pyzkaccess_native.events import DENIED_EVENTS, GRANTED_EVENTS
 
-from .const import (CONF_OPEN_SECONDS, CONF_POLL_INTERVAL, CONF_SYNC_CLOCK, DEFAULT_OPEN_SECONDS,
-                    DEFAULT_POLL_INTERVAL, DEFAULT_SECOND_WINDOW, DEFAULT_SYNC_CLOCK, DOMAIN,
-                    ENROLL_TIMEOUT_SECONDS, EVENT_ACCESS, IDENTIFY_PINS, IDENTIFY_TIMEOUT_SECONDS, PANEL_URL,
-                    PHONE_ECHO_SECONDS, PHONE_PAIR_TIMEOUT_SECONDS, POLL_INTERVAL_MAX, POLL_INTERVAL_MIN,
-                    RESTART_WAIT_SECONDS, RESULT_ACTION, RESULT_DENIED, RESULT_GRANTED, RESULT_OTHER,
-                    RETRY_MAX_SECONDS, RETRY_MIN_SECONDS, SLOW_RESTART_COOLDOWN_SECONDS,
-                    SLOW_THRESHOLD_SECONDS, SNAPSHOT_REFRESH_SECONDS, TOGGLE_INACTIVE_STATES)
+from .const import (CONF_POLL_INTERVAL, CONF_SYNC_CLOCK, DEFAULT_SECOND_WINDOW, DEFAULT_SYNC_CLOCK, DOMAIN,
+                    ENROLL_TIMEOUT_SECONDS, EVENT_ACCESS, IDENTIFY_PINS, PANEL_URL, RESULT_ACTION,
+                    RESULT_DENIED, RESULT_GRANTED, RESULT_OTHER, RETRY_MAX_SECONDS, RETRY_MIN_SECONDS,
+                    SNAPSHOT_REFRESH_SECONDS, TOGGLE_INACTIVE_STATES)
+# signal_* and poll_interval are re-exported: other modules import them from here.
+from .helpers import (UNKNOWN_CREDENTIAL, ZKData, access_method, poll_interval,  # noqa: F401
+                      signal_changed, signal_event)
+from .identify import IdentifyMixin
+from .maintenance import MaintenanceMixin
 from .manager import AccessManager
+from .phones import PhoneMixin
 from .store import AccessStore
 
 _LOGGER = logging.getLogger(__name__)
 T = TypeVar("T")
 
-#: Event codes meaning "credential not registered": never an action.
-UNKNOWN_CREDENTIAL = {27, 34}
-FINGERPRINT_EVENTS = {14, 15, 16, 17, 18, 19, 31, 32, 33, 34, 35, 103, 203}
-CODE_EVENTS = {4, 30, 101}
-REMOTE_EVENTS = {7, 8, 9, 10, 11, 12, 13, 205}
-
-
-def poll_interval(options: Mapping[str, Any]) -> float:
-    """The configured poll interval, kept within the supported range."""
-    value = float(options.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL))
-    return min(max(value, POLL_INTERVAL_MIN), POLL_INTERVAL_MAX)
-
-
-def signal_event(entry_id: str) -> str:
-    return f"{DOMAIN}_{entry_id}_event"
-
-
-def signal_changed(entry_id: str) -> str:
-    return f"{DOMAIN}_{entry_id}_changed"
-
-
-def access_method(ev: AccessEvent) -> str:
-    code = int(ev.event)
-    if code in REMOTE_EVENTS:
-        return "remote"
-    if code in FINGERPRINT_EVENTS:
-        return "fingerprint"
-    if code in CODE_EVENTS:
-        return "code"
-    if ev.card:
-        return "card"
-    return {1: "fingerprint", 3: "code", 4: "card"}.get(int(ev.verify_mode), "other")
-
-
-@dataclass
-class ZKData:
-    """Snapshot published to entities and to the panel after each poll."""
-
-    status: Optional[DoorStatus] = None
-    events: list[dict[str, Any]] = field(default_factory=list)
-    snapshot: Optional[dict[str, Any]] = None
-
-
-class ZKCoordinator(DataUpdateCoordinator[ZKData]):
+class ZKCoordinator(IdentifyMixin, PhoneMixin, MaintenanceMixin, DataUpdateCoordinator[ZKData]):
     config_entry: ConfigEntry
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry, store: AccessStore) -> None:
@@ -109,6 +68,8 @@ class ZKCoordinator(DataUpdateCoordinator[ZKData]):
         self._identify_cache: Optional[tuple[int, dict[int, Any], int]] = None
         #: median response time of the device (s), measured every hour
         self.response_time: Optional[float] = None
+        #: monotonic time until which the device is booting after a reboot
+        self._boot_until: Optional[float] = None
         self._last_auto_restart: Optional[float] = None  # monotonic time of the last automatic reboot
         self._unsub_hourly: Optional[Callable[[], None]] = None
         #: restore running in the background after a finger was identified
@@ -403,76 +364,27 @@ class ZKCoordinator(DataUpdateCoordinator[ZKData]):
         if events:
             self.store.save(delay=10)
 
-    # ------------------------------------------------------------------- phones
-    def start_phone_pairing(self, person: int, digit: int) -> dict[str, Any]:
-        self.phone_pairing = {"person": person, "digit": digit, "state": "waiting",
-                              "until": time.monotonic() + PHONE_PAIR_TIMEOUT_SECONDS}
-        return self.phone_pairing
-
-    async def _on_tag(self, event: Event) -> None:
-        """A Home Assistant tag was scanned: phone pairing or phone access."""
-        tag_id = event.data.get("tag_id")
-        device_id = event.data.get("device_id")
-        tag = self.store.data["tags"].get(str(tag_id))
-        if tag is None or not device_id:
-            return
-        entry_id = self.config_entry.entry_id
-        device = dr.async_get(self.hass).async_get(device_id)
-        device_name = (device.name_by_user or device.name) if device else device_id
-        pairing = self.phone_pairing
-        if pairing and time.monotonic() < pairing["until"]:
-            self.store.data["phones"][device_id] = {"person": pairing["person"], "digit": pairing["digit"],
-                                                    "name": device_name, "enabled": True}
-            self.store.save()
-            self.phone_pairing = None
-            self._snapshot_at = None
-            await self.async_refresh_snapshot(silent=True)
-            async_dispatcher_send(self.hass, signal_changed(entry_id),
-                                  {"pair": {"state": "done", "device_id": device_id, "name": device_name}})
-            return
-        door = int(tag.get("door", 1))
-        phone = self.store.data["phones"].get(device_id)
-        who = None
-        digit = cat = None
-        if phone:
-            digit = phone["digit"]
-            cat = self.store.category(digit)
-            person = self.snapshot and next((p for p in self.snapshot["persons"] if p["num"] == phone["person"]), None)
-            who = {"person": phone["person"], "person_name": person["name"] if person else None,
-                   "ha_person": person["ha_person"] if person else None}
-        allowed = bool(phone and phone.get("enabled", True) and cat and not self.store.is_disabled(phone["person"])
-                       and not self.store.is_category_off(phone["person"], digit))
-        result = RESULT_ACTION if allowed else RESULT_DENIED
-        digit, cat, gesture, toggled = self._resolve(digit, cat, result, ("phone", device_id))
-        if allowed and self.store.is_category_off(phone["person"], digit):
-            allowed, result = False, RESULT_DENIED
-        if allowed and (cat or {}).get("relay"):
-            result = RESULT_GRANTED  # the integration releases the door itself (below)
-        user_id = None
-        if who and digit is not None:
-            try:
-                user_id = self.manager.numbering.user_id(who["person"], digit)
-            except Exception:  # noqa: BLE001 - informative only
-                user_id = None
-        ev = self._event(result=result, code=None,
-                         event_name="Phone access" if result != RESULT_DENIED else "Phone refused",
-                         user_id=user_id, who=who, digit=digit, cat=cat, gesture=gesture, toggled=toggled,
-                         method="phone", card=None, door=door, verify_mode=None, when=None, phone=device_name)
-        self._publish([ev])
-        if result == RESULT_GRANTED and (cat or {}).get("relay"):
-            seconds = int(self.config_entry.options.get(CONF_OPEN_SECONDS, DEFAULT_OPEN_SECONDS))
-            try:
-                self._phone_echo[door] = time.monotonic() + PHONE_ECHO_SECONDS
-                await self.async_run(self.manager.door_control, door, "open", seconds, refresh=False)
-            except HomeAssistantError as ex:
-                _LOGGER.warning("Phone access: cannot open door %s: %s", door, ex)
-
     # -------------------------------------------------------------- operations
-    async def async_run(self, func: Callable[..., T], *args: Any, refresh: bool = True) -> T:
+    async def _async_wait_boot(self, background: bool) -> None:
+        """While the device boots after a reboot: an operation started by the user stops with
+        a clear message; an internal one (schedules, identification) waits for the end."""
+        remaining = (self._boot_until or 0.0) - time.monotonic()
+        if remaining <= 0:
+            return
+        if not background:
+            raise HomeAssistantError(translation_domain=DOMAIN, translation_key="device_rebooting",
+                                     translation_placeholders={"seconds": str(int(remaining) + 1)})
+        await asyncio.sleep(remaining)
+
+    async def async_run(self, func: Callable[..., T], *args: Any, refresh: bool = True,
+                        background: bool = False) -> T:
         """Run a manager operation in the executor, then refresh the snapshot.
 
+        ``background``: an internal operation (schedules, identification), which waits while
+        the device reboots instead of failing with a message for the user.
         An identification restore running in the background goes first: an operation
         started meanwhile (delete the finger just identified...) waits for it."""
+        await self._async_wait_boot(background)
         task = self._restore_task
         if task is not None and not task.done() and asyncio.current_task() is not task:
             await asyncio.wait({task})
@@ -493,6 +405,8 @@ class ZKCoordinator(DataUpdateCoordinator[ZKData]):
         return result
 
     async def async_refresh_snapshot(self, silent: bool = False) -> None:
+        await self._async_wait_boot(background=silent)
+
         def job() -> dict[str, Any]:
             with self.client.lock:
                 self._ensure_connected(force=True)
@@ -526,7 +440,7 @@ class ZKCoordinator(DataUpdateCoordinator[ZKData]):
             _LOGGER.debug("Backup skipped: fingerprints are isolated for an identification")
             return None
         try:
-            return await self.async_run(self.manager.backup_create, reason, refresh=False)
+            return await self.async_run(self.manager.backup_create, reason, refresh=False, background=True)
         except HomeAssistantError as ex:
             _LOGGER.warning("Backup of %s failed: %s",
                             self.config_entry.title.strip() or self.config_entry.unique_id, ex)
@@ -548,162 +462,15 @@ class ZKCoordinator(DataUpdateCoordinator[ZKData]):
         self.live_options = dict(options)
         return True
 
-    # ----------------------------------------------------------- identification
-    def start_identify(self, person: Optional[int], physical: Optional[int]) -> dict[str, Any]:
-        if self.identify is not None:
-            raise HomeAssistantError(translation_domain=DOMAIN, translation_key="identify_running")
-        if self.store.data.get("identify_pending"):
-            raise HomeAssistantError(translation_domain=DOMAIN, translation_key="identify_undoing")
-        if self.enrollment is not None:
-            raise HomeAssistantError(translation_domain=DOMAIN, translation_key="enroll_running")
-        self.identify = {"state": "waiting", "step": 1, "person": person, "physical": physical,
-                         "started": time.monotonic()}
-        self._identify_notify()
-        return self._identify_public()
-
-    def _identify_public(self, idf: Optional[dict[str, Any]] = None) -> dict[str, Any]:
-        idf = idf if idf is not None else (self.identify or {})
-        return {k: v for k, v in idf.items() if k not in ("started", "mapping")}
-
-    def _identify_notify(self, idf: Optional[dict[str, Any]] = None) -> None:
-        async_dispatcher_send(self.hass, signal_changed(self.config_entry.entry_id),
-                              {"identify": self._identify_public(idf)})
-
-    def _fingers_of(self, user_id: int) -> list[int]:
-        for p in (self.snapshot or {}).get("persons", []):
-            for c in p["categories"]:
-                if c["user_id"] == user_id:
-                    return [f["finger_id"] for f in c["fingers"]]
-        return []
-
-    @callback
-    def _identify_event(self, ev: AccessEvent) -> None:
-        idf = self.identify
-        if idf is None or idf["state"] not in ("waiting", "again", "unknown", "other"):
-            return  # busy (isolating / restoring)
-        if access_method(ev) in ("card", "code", "remote"):
-            return
-        uid = ev.user_id or 0
-        if idf["step"] == 2:
-            mapping = idf.get("mapping") or {}
-            if uid in mapping:
-                # The answer is known: show it at once, put the fingerprints back behind it.
-                user_id = idf["user_id"]
-                self._identify_found(user_id, mapping[uid])
-                self._restore_task = self.hass.async_create_task(self._async_identify_restore())
-            else:
-                idf.update(state="other")  # another finger than the one of step 1
-                self._identify_notify()
-            return
-        fingers = self._fingers_of(uid) if uid else []
-        if not fingers:
-            idf.update(state="unknown")
-            self._identify_notify()
-            return
-        if len(fingers) == 1:
-            self._identify_found(uid, fingers[0])
-            return
-        idf.update(state="isolating", step=2, user_id=uid)
-        self._identify_notify()
-        self.hass.async_create_task(self._async_identify_isolate(idf, uid))
-
-    async def _async_identify_isolate(self, idf: dict[str, Any], user_id: int) -> None:
-        try:
-            mapping, templates, slot = await self.async_run(self.manager.identify_copy, user_id, refresh=False)
-            self._identify_cache = (user_id, templates, slot)
-            # Recorded on disk before anything is removed: a restart undoes the isolation.
-            self.store.data["identify_pending"] = {"user_id": user_id,
-                                                   "temps": {str(k): v for k, v in mapping.items()}}
-            await self.store.async_save_now()
-            await self.async_run(self.manager.identify_hide, user_id, refresh=False)
-        except HomeAssistantError as ex:
-            _LOGGER.warning("Identification: isolating UserID %s failed: %s", user_id, ex)
-            if self.identify is idf:
-                self.identify = None
-            self._identify_notify({**idf, "state": "error", "error": str(ex)})
-            await self._async_identify_restore()
-            return
-        if self.identify is not idf:  # cancelled meanwhile
-            await self._async_identify_restore()
-            return
-        idf.update(state="again", mapping=mapping, started=time.monotonic())
-        self._identify_notify()
-
-    async def async_wait_restore(self) -> None:
-        """Wait for a background restore (before starting another identification)."""
-        task = self._restore_task
-        if task is not None and not task.done():
-            await asyncio.wait({task})
-
-    async def _async_identify_restore(self) -> bool:
-        """Undo a pending isolation (also after a restart). True when nothing is left."""
-        pending = self.store.data.get("identify_pending")
-        if not pending:
-            return True
-        if self._identify_restoring:
-            return False
-        self._identify_restoring = True
-        try:
-            mapping = {int(k): v for k, v in pending["temps"].items()}
-            cache = self._identify_cache
-            templates, slot = (cache[1], cache[2]) if cache and cache[0] == pending["user_id"] else (None, None)
-            await self.async_run(self.manager.identify_restore, pending["user_id"], mapping, templates, slot,
-                                 refresh=False)
-        except HomeAssistantError as ex:
-            _LOGGER.error("Identification: restoring the fingerprints of UserID %s failed (will retry): %s",
-                          pending["user_id"], ex)
-            return False
-        finally:
-            self._identify_restoring = False
-        self.store.data.pop("identify_pending", None)
-        self._identify_cache = None
-        await self.store.async_save_now()
-        self._snapshot_at = None
-        return True
-
-    @callback
-    def _identify_found(self, user_id: int, finger_id: int) -> None:
-        idf = self.identify or {}
-        who = self._user_index.get(user_id) or {}
-        placed = False
-        if idf.get("physical") is not None and who and who.get("person") == idf.get("person"):
-            self.store.set_physical_finger(user_id, finger_id, idf["physical"],
-                                           self.person_user_ids(who["person"]) or [user_id])
-            self.store.save()
-            placed = True
-        result = {**idf, "state": "found", "user_id": user_id, "finger_id": finger_id,
-                  "found_person": who.get("person"), "found_name": who.get("person_name"),
-                  "placed": placed}
-        self.identify = None
-        self.async_rebuild()
-        self._identify_notify(result)
-
-    @callback
-    def _identify_check_timeout(self) -> None:
-        idf = self.identify
-        if idf is None or idf["state"] in ("isolating", "restoring"):
-            return
-        if time.monotonic() - idf["started"] > IDENTIFY_TIMEOUT_SECONDS:
-            self.identify = None
-            self._identify_notify({**idf, "state": "timeout"})
-            if self.store.data.get("identify_pending"):
-                self.hass.async_create_task(self._async_identify_restore())
-
-    async def async_identify_cancel(self) -> None:
-        idf, self.identify = self.identify, None
-        if idf is not None:
-            self._identify_notify({**idf, "state": "cancelled"})
-        await self._async_identify_restore()
-
     # ---------------------------------------------------------------- lifecycle
     async def async_setup_schedules(self) -> None:
         self._unsub_tags = self.hass.bus.async_listen("tag_scanned", self._on_tag)
 
         async def nightly(_now) -> None:
-            await self.async_run(self._measure_clock, refresh=False)
+            await self.async_run(self._measure_clock, refresh=False, background=True)
             if self.config_entry.options.get(CONF_SYNC_CLOCK, DEFAULT_SYNC_CLOCK):
                 try:
-                    await self.async_run(self.client.set_time, refresh=False)
+                    await self.async_run(self.client.set_time, refresh=False, background=True)
                 except HomeAssistantError as ex:
                     _LOGGER.warning("Clock sync failed: %s", ex)
             if self.store.data["backup"].get("nightly", True):
@@ -716,51 +483,6 @@ class ZKCoordinator(DataUpdateCoordinator[ZKData]):
 
         self._unsub_nightly = async_track_time_change(self.hass, nightly, hour=4, minute=0, second=0)
         self._unsub_hourly = async_track_time_change(self.hass, hourly, minute=30, second=0)
-
-    # ---------------------------------------------------------------- maintenance
-    @property
-    def maintenance(self) -> dict[str, Any]:
-        return self.store.data.setdefault("maintenance", {"nightly_restart": True, "slow_restart": True})
-
-    def _measure_response(self) -> float:
-        """Median of 3 clock reads (a cheap request): the device's own response time."""
-        times = []
-        for _ in range(3):
-            start = time.monotonic()
-            self.client.get_time()
-            times.append(time.monotonic() - start)
-        return sorted(times)[1]
-
-    async def async_check_response_time(self) -> Optional[float]:
-        """Measure the response time; reboot a slow device when allowed (at most every 6 h)."""
-        try:
-            value = await self.async_run(self._measure_response, refresh=False)
-        except HomeAssistantError as ex:
-            _LOGGER.debug("Response time not measured: %s", ex)
-            return None
-        self.response_time = round(value, 3)
-        self.async_update_listeners()
-        if (value > SLOW_THRESHOLD_SECONDS and self.maintenance.get("slow_restart", True)
-                and (self._last_auto_restart is None
-                     or time.monotonic() - self._last_auto_restart > SLOW_RESTART_COOLDOWN_SECONDS)):
-            _LOGGER.warning("%s answers in %.2f s (over %.1f s): rebooting it",
-                            self.client.host, value, SLOW_THRESHOLD_SECONDS)
-            self._last_auto_restart = time.monotonic()
-            await self.async_restart_device("slow")
-        return self.response_time
-
-    async def async_restart_device(self, reason: str) -> None:
-        """Reboot the device (about 25 s). Data and lock are untouched; the integration
-        reconnects by itself once the device is back."""
-        def job() -> None:
-            self.client.restart()                      # closes the connection
-            # No reconnection attempt while it boots: hammering a booting device froze it once.
-            self._retry_at = time.monotonic() + RESTART_WAIT_SECONDS
-        await self.async_run(job, refresh=False)
-        self.store.data["last_restart"] = {"time": dt_util.now().isoformat(timespec="seconds"), "reason": reason}
-        self.store.save()
-        _LOGGER.info("%s rebooted (%s)", self.client.host, reason)
-        async_dispatcher_send(self.hass, signal_changed(self.config_entry.entry_id))
 
     async def async_shutdown(self) -> None:
         # Home Assistant also calls this on unload for coordinators bound to a config
