@@ -50,7 +50,7 @@ const I18N = {
     start: "Start", waiting: "Waiting for the new fingerprint on the device…", enrolled: "Fingerprint enrolled.",
     timeout: "No new fingerprint after 5 minutes. Try again.",
     card_wait: "Present the card to the reader…", card_detected: "Card detected", unknown_to_device: "Unknown to the device",
-    enter_card: "…or type the card number", write_device: "Write to device",
+    enter_card: "…or type the card number", card_missing: "Present a card on the reader or type its number.", write_device: "Write to device",
     code_title: "Keypad code — {c}", code_label: "Code (1 to 6 digits)",
     new_person_title: "New person", number_auto: "Number (empty = next free)",
     assign_title: "Assign UserID {u}", existing_person: "Existing person", new_number: "New person number",
@@ -150,7 +150,7 @@ const I18N = {
     start: "Commencer", waiting: "En attente de la nouvelle empreinte sur le lecteur…", enrolled: "Empreinte enregistrée.",
     timeout: "Aucune nouvelle empreinte après 5 minutes. Réessayez.",
     card_wait: "Passez la carte devant le lecteur…", card_detected: "Carte détectée", unknown_to_device: "Inconnue du lecteur",
-    enter_card: "…ou tapez le numéro de la carte", write_device: "Écrire dans le lecteur",
+    enter_card: "…ou tapez le numéro de la carte", card_missing: "Passez une carte sur le lecteur ou tapez son numéro.", write_device: "Écrire dans le lecteur",
     code_title: "Code clavier — {c}", code_label: "Code (1 à 6 chiffres)",
     new_person_title: "Nouvelle personne", number_auto: "Numéro (vide = premier libre)",
     assign_title: "Rattacher le UserID {u}", existing_person: "Personne existante", new_number: "Nouveau numéro de personne",
@@ -522,7 +522,9 @@ class ZkAccessPanel extends HTMLElement {
       case "learn-card": s.modal = { kind: "card", person: d.p ? Number(d.p) : (s.person ?? this.persons()[0]?.num ?? null),
         digit: Number(d.d ?? 0), card: d.card ? Number(d.card) : null, cardInput: d.card || "" }; break;
       case "card-save": {
-        const m = s.modal, card = Number(this.val("card-no"));
+        // The typed number wins; otherwise the card presented on the reader.
+        const m = s.modal, typed = Number(this.val("card-no").replace(/\D/g, "")), card = typed || m.card || 0;
+        if (!(card > 0)) { this.toast(this.t("card_missing"), true); return; }
         await this.call("credential/set", { person: Number(this.val("card-person")), digit: Number(this.val("card-digit")), card }, this.t("saved"));
         s.modal = null; await this.refresh(); break;
       }

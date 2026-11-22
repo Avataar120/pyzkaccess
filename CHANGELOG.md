@@ -41,6 +41,9 @@
   the integration reports them as denied, phones included; a second presentation or a
   toggle that leads to a switched-off category is denied too. Kept when the whole person
   is disabled and enabled again.
+- Panel: *Learn a card* wrote card 0 (refused: "not a valid value at 'card'") when the
+  number field was empty; the card presented on the reader is used then, and a missing
+  number gives a clear message.
 - Panel: no more confirmation when a category's *Device relay* is unchecked (it only
   changes the device's own output; automations receive `action` instead of `granted`).
 - README and `examples/home_assistant_automations.yaml`: automations for fingerprints,
