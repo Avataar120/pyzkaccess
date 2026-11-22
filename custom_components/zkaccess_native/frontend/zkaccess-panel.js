@@ -97,7 +97,7 @@ const I18N = {
     type_toggle: "Toggle (by state)", toggle_entity: "Entity", toggle_on: "When active →", toggle_off: "When inactive →",
     toggle_help: "Toggle: one presentation, Home Assistant picks the category from the state of an entity (active = on, locked, armed…).",
     clock_offset: "Offset before the last sync: {s} s",
-    on_hand: "Finger on the hand", not_placed: "— not placed —",
+    on_hand: "Finger on the hand", not_placed: "— not placed —", nfc_tag: "NFC tag “{n}”",
     relay_confirm: "These UserIDs will lose the right to open the door (the device will refuse them; Home Assistant will still receive their actions): {ids}. Continue?",
     confirm: "Confirm",
   },
@@ -183,7 +183,7 @@ const I18N = {
     type_toggle: "Bascule (selon un état)", toggle_entity: "Entité", toggle_on: "Si active →", toggle_off: "Si inactive →",
     toggle_help: "Bascule : un seul passage, Home Assistant choisit la catégorie selon l'état d'une entité (active = on, verrouillé, armé…).",
     clock_offset: "Écart avant la dernière remise à l'heure : {s} s",
-    on_hand: "Doigt sur la main", not_placed: "— non placé —",
+    on_hand: "Doigt sur la main", not_placed: "— non placé —", nfc_tag: "Tag NFC « {n} »",
     relay_confirm: "Ces UserID vont perdre le droit d'ouvrir la porte (le lecteur les refusera ; Home Assistant recevra quand même leurs actions) : {ids}. Continuer ?",
     confirm: "Confirmer",
   },
@@ -961,7 +961,7 @@ class ZkAccessPanel extends HTMLElement {
       <div class="side"><section class="card"><h2>${this.t("tags")}</h2><p class="sub">${this.t("tags_help")}</p>
         ${(this._s.haTags || []).length ? `<div class="list">${this._s.haTags.map((tg, i) => {
           const conf = (st?.tags || {})[tg.id];
-          return `<div class="row"><label class="chk" style="flex:1"><input type="checkbox" data-tag="${esc(tg.id)}" data-idx="${i}" ${conf ? "checked" : ""}>${esc(tg.name || tg.id)}</label>
+          return `<div class="row"><label class="chk" style="flex:1"><input type="checkbox" data-tag="${esc(tg.id)}" data-idx="${i}" ${conf ? "checked" : ""}>${this.t("nfc_tag", { n: esc(tg.name || tg.id) })}</label>
             ${(st?.device?.doors || 1) > 1 ? `<label class="row muted">${this.t("door_lbl")}<input id="tag-door-${i}" type="number" min="1" max="${st.device.doors}" value="${conf?.door ?? 1}" style="width:64px"></label>` : ""}</div>`; }).join("")}</div>
           <div class="actions" style="margin-top:10px"><button class="btn primary" data-act="tags-save">${this.t("save")}</button></div>`
           : `<p class="muted">${this.t("no_tags")}</p>`}</section>
