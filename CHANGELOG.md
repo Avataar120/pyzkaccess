@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.2 - 2026-11-22
 
 - Home Assistant integration: faster finger identification on a UserID with several
   fingerprints. Fewer exchanges with the device (4 fingerprints: 11 instead of 18 to separate

@@ -34,7 +34,7 @@
     "pyzkaccess_native"
   ],
   "requirements": [
-    "pyzkaccess-native==0.5.1"
+    "pyzkaccess-native==0.5.2"
   ],
-  "version": "0.5.1"
+  "version": "0.5.2"
 }

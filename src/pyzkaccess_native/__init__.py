@@ -11,7 +11,7 @@ from .events import (AccessEvent, DoorSensor, DoorStatus, EventType, InOutState,
 from .models import Authorization, Template, User
 from .people import CategoryScheme
 
-__version__ = "0.5.1"
+__version__ = "0.5.2"
 
 __all__ = [
     "ZKAccess", "DeviceInfo", "DoorSettings", "discover", "scan", "DiscoveredDevice", "CategoryScheme",
