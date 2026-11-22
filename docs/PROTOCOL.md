@@ -255,7 +255,9 @@ Categories without the device lock (Home Assistant integration): their UserIDs h
 `userauthorize` row, so the device answers with event 23 and **blinks its red LED** as for any
 refusal, while the integration reports an `action` and automations run normally. For a green
 "accepted" feedback on the device, keep the device lock enabled for the category: event 14 / 0,
-`granted` in Home Assistant, automations unchanged.
+`granted` in Home Assistant, automations unchanged. Event 23 comes with **verify mode 0** (the device does not say
+whether a finger, card or code was used); the integration deduces it from the UserID's
+credentials.
 
 The `transaction` table keeps every event (tens of thousands of rows). A filtered read
 (`08` with a condition) on it can take more than 5 seconds, during which the device answers
