@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.1 - 2026-11-22
 
 - README: supported devices made explicit (PullSDK / ZKAccess access control devices; time
   attendance terminals such as MA300, F22, SpeedFace use another protocol), with a quick check.
