@@ -97,7 +97,7 @@ const I18N = {
     type_toggle: "Toggle (by state)", toggle_entity: "Entity", toggle_on: "When active →", toggle_off: "When inactive →",
     toggle_help: "Toggle: one presentation, Home Assistant picks the category from the state of an entity (active = on, locked, armed…).",
     clock_offset: "Offset before the last sync: {s} s",
-    on_hand: "Finger on the hand", not_placed: "— not placed —", nfc_tag: "NFC tag “{n}”",
+    on_hand: "Finger on the hand", not_placed: "— not placed —", nfc_tag: "NFC tag “{n}”", reload: "Reload from the device",
     relay_confirm: "These UserIDs will lose the right to open the door (the device will refuse them; Home Assistant will still receive their actions): {ids}. Continue?",
     confirm: "Confirm",
   },
@@ -183,7 +183,7 @@ const I18N = {
     type_toggle: "Bascule (selon un état)", toggle_entity: "Entité", toggle_on: "Si active →", toggle_off: "Si inactive →",
     toggle_help: "Bascule : un seul passage, Home Assistant choisit la catégorie selon l'état d'une entité (active = on, verrouillé, armé…).",
     clock_offset: "Écart avant la dernière remise à l'heure : {s} s",
-    on_hand: "Doigt sur la main", not_placed: "— non placé —", nfc_tag: "Tag NFC « {n} »",
+    on_hand: "Doigt sur la main", not_placed: "— non placé —", nfc_tag: "Tag NFC « {n} »", reload: "Relire le lecteur",
     relay_confirm: "Ces UserID vont perdre le droit d'ouvrir la porte (le lecteur les refusera ; Home Assistant recevra quand même leurs actions) : {ids}. Continuer ?",
     confirm: "Confirmer",
   },
@@ -430,7 +430,7 @@ class ZkAccessPanel extends HTMLElement {
     const s = this._s, d = el.dataset;
     switch (a) {
       case "tab": s.view = d.v; s.person = null; s.finger = null;
-        if (d.v === "door") this.loadDoor(); if (d.v === "settings") { this.loadBackups(); this.loadTags(); } break;
+        if (d.v === "door") this.loadDoor(); if (d.v === "settings") { this.loadBackups(); this.loadTags(); this.loadDoor(); } break;
       case "device": s.entryId = el.value; s.person = null; await this._loadDevice(); return;
       case "open-person": s.person = Number(d.p); s.finger = null; s.view = "people"; break;
       case "back": s.person = null; s.finger = null; break;
@@ -505,6 +505,14 @@ class ZkAccessPanel extends HTMLElement {
         then: async () => { await this.call("user/delete", { user_id: Number(d.u) }); await this.refresh(); } }; break;
       case "confirm-ok": { const m = s.modal; s.modal = null; this.render(); await m.then(); break; }
       case "close-modal": s.modal = null; break;
+      case "reload": {
+        this.busy(1);
+        try { s.state = await this.ws("state", { refresh: true }); s.history = await this.ws("history", { limit: 300 }); }
+        catch (e) { this.toast(`${this.t("error")}: ${e.message || e}`, true); }
+        finally { this.busy(-1); }
+        if (s.view === "settings") { this.loadDoor(); this.loadBackups(); }
+        break;
+      }
       case "filter": s.filter = d.f; break;
       case "door-ctl": await this.call("door/control", { door: Number(d.door || 1), action: d.a, seconds: Number(this.val("open-for") || 5) }, this.t("saved")); return;
       case "door-save": {
@@ -707,7 +715,8 @@ class ZkAccessPanel extends HTMLElement {
     const tabs = ["people", "activity", "door", "settings"].map((v) =>
       `<button class="tab ${s.view === v ? "on" : ""}" data-act="tab" data-v="${v}">${this.t("tab_" + v)}</button>`).join("");
     return `<header><div class="bar"><span id="menu-slot"></span><h1>${this.t("title")}</h1>${devSel}
-      ${st ? `<span class="pill status" style="background:${connected ? "#e7f6ee" : "#fdecea"};color:${connected ? "#067647" : "#b42318"}">● ${this.t(connected ? "connected" : "disconnected")}</span>` : ""}
+      ${st ? `<button class="btn sm status" data-act="reload" title="${this.t("reload")}" aria-label="${this.t("reload")}">↻ ${this.t("reload")}</button>` : ""}
+      ${st ? `<span class="pill" style="background:${connected ? "#e7f6ee" : "#fdecea"};color:${connected ? "#067647" : "#b42318"}">● ${this.t(connected ? "connected" : "disconnected")}</span>` : ""}
       </div><nav>${tabs}</nav></header>`;
   }
 
@@ -901,14 +910,6 @@ class ZkAccessPanel extends HTMLElement {
           <div class="actions" style="margin-top:14px"><button class="btn primary" data-act="door-save">${this.t("save_device")}</button></div>`
         : `<p class="muted">${this.t("loading")}</p>`}</section></div>
       <div class="side">
-        <section class="card"><h2>${this.t("clock")}</h2><div style="font-size:24px;font-weight:500">${door?.device_time ? this.fmtTime(door.device_time) : "—"}</div>
-          ${st?.clock_offset != null ? `<div class="muted">${this.t("clock_offset", { s: st.clock_offset })}</div>` : ""}
-          <div class="actions" style="justify-content:flex-start;margin-top:12px"><button class="btn" data-act="clock-sync">${this.t("sync_now")}</button></div></section>
-        <section class="card"><h2>${this.t("device_info")}</h2><div class="list">
-          <div class="row"><span class="muted" style="width:110px">${this.t("model")}</span>${esc(st?.device?.machine_type ?? "—")}</div>
-          <div class="row"><span class="muted" style="width:110px">${this.t("firmware")}</span>${esc(st?.device?.firmware ?? "—")}</div>
-          <div class="row"><span class="muted" style="width:110px">${this.t("doors")}</span>${esc(st?.device?.doors ?? "—")}</div>
-          <div class="row"><span class="muted" style="width:110px">Serial</span><span class="mono">${esc(st?.device?.serial ?? "—")}</span></div></div></section>
         <section class="card"><h2>${this.t("alarm")}</h2><p class="sub">${this.t("cancel_alarm_help")}</p>
           <button class="btn" data-act="door-ctl" data-a="cancel_alarm">${this.t("cancel_alarm")}</button></section>
       </div></div></main>`;
@@ -958,7 +959,15 @@ class ZkAccessPanel extends HTMLElement {
           <button class="btn primary" style="margin-left:auto" data-act="backup-now">${this.t("backup_now")}</button></div>
         <div class="list">${backups}</div>
         <div class="actions" style="justify-content:flex-start;margin-top:10px"><button class="btn" data-act="backup-import">${this.t("import_file")}</button></div></section></div>
-      <div class="side"><section class="card"><h2>${this.t("tags")}</h2><p class="sub">${this.t("tags_help")}</p>
+      <div class="side"><section class="card"><h2>${this.t("clock")}</h2><div style="font-size:24px;font-weight:500">${this._s.door?.device_time ? this.fmtTime(this._s.door.device_time) : "—"}</div>
+          ${st?.clock_offset != null ? `<div class="muted">${this.t("clock_offset", { s: st.clock_offset })}</div>` : ""}
+          <div class="actions" style="justify-content:flex-start;margin-top:12px"><button class="btn" data-act="clock-sync">${this.t("sync_now")}</button></div></section>
+        <section class="card"><h2>${this.t("device_info")}</h2><div class="list">
+          <div class="row"><span class="muted" style="width:110px">${this.t("model")}</span>${esc(st?.device?.machine_type ?? "—")}</div>
+          <div class="row"><span class="muted" style="width:110px">${this.t("firmware")}</span>${esc(st?.device?.firmware ?? "—")}</div>
+          <div class="row"><span class="muted" style="width:110px">${this.t("doors")}</span>${esc(st?.device?.doors ?? "—")}</div>
+          <div class="row"><span class="muted" style="width:110px">Serial</span><span class="mono">${esc(st?.device?.serial ?? "—")}</span></div></div></section>
+        <section class="card"><h2>${this.t("tags")}</h2><p class="sub">${this.t("tags_help")}</p>
         ${(this._s.haTags || []).length ? `<div class="list">${this._s.haTags.map((tg, i) => {
           const conf = (st?.tags || {})[tg.id];
           return `<div class="row"><label class="chk" style="flex:1"><input type="checkbox" data-tag="${esc(tg.id)}" data-idx="${i}" ${conf ? "checked" : ""}>${this.t("nfc_tag", { n: esc(tg.name || tg.id) })}</label>
