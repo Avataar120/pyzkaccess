@@ -156,3 +156,53 @@ def test_deprecated_aliases():
         warnings.simplefilter("always")
         assert User(user_id=7, slot=2).pin == 7 and User(user_id=7, slot=2).uid == 2
     assert any(issubclass(x.category, DeprecationWarning) for x in w)
+
+
+def test_single_finger_delete_without_multi_condition_support(dev, emu):
+    # The emulator, like the MA500, ignores a delete with two conditions (Pin + FingerID).
+    assert emu.state.multi_condition_delete is False
+    dev.save_user(User(user_id=7, name="x"))
+    for slot, byte in ((0, b"A"), (1, b"B"), (2, b"C")):
+        dev.save_template(Template(user_id=7, finger_id=slot, template=byte * 40))
+    dev.delete_templates(7, 1)
+    assert [(t.finger_id, t.template) for t in dev.get_templates(7)] == [(0, b"A" * 40), (2, b"C" * 40)]
+    dev.delete_templates(7, 5)  # absent slot: nothing happens
+    assert dev.count("templatev10") == 2
+    dev.delete_templates(7)
+    assert dev.count("templatev10") == 0
+
+
+def test_move_last_template_removes_source(dev):
+    for uid in (400, 401):
+        dev.save_user(User(user_id=uid, name="Alice"))
+    dev.save_template(Template(user_id=400, finger_id=0, template=b"A" * 40))
+    dev.save_template(Template(user_id=401, finger_id=0, template=b"B" * 40))
+    assert dev.move_template(401, 0, 400) == 1
+    assert dev.get_templates(401) == []
+    assert [t.template for t in dev.get_templates(400)] == [b"A" * 40, b"B" * 40]
+    assert dev.count("templatev10") == 2
+
+
+def test_move_templates_all_at_once(dev):
+    for uid in (500, 501):
+        dev.save_user(User(user_id=uid, name="Bob"))
+    dev.save_template(Template(user_id=500, finger_id=0, template=b"A" * 40))
+    dev.save_template(Template(user_id=501, finger_id=0, template=b"B" * 40))
+    dev.save_template(Template(user_id=501, finger_id=3, template=b"C" * 40))
+    assert dev.move_templates(501, 500) == {0: 1, 3: 2}
+    assert dev.get_templates(501) == []
+    assert [(t.finger_id, t.template) for t in dev.get_templates(500)] == [
+        (0, b"A" * 40), (1, b"B" * 40), (2, b"C" * 40)]
+    assert dev.move_templates(501, 500) == {}
+
+
+def test_move_templates_refuses_without_room(dev):
+    for uid in (600, 601):
+        dev.save_user(User(user_id=uid, name="Eve"))
+    for slot in range(9):
+        dev.save_template(Template(user_id=600, finger_id=slot, template=bytes([slot]) * 20))
+    dev.save_template(Template(user_id=601, finger_id=0, template=b"X" * 20))
+    dev.save_template(Template(user_id=601, finger_id=1, template=b"Y" * 20))
+    with pytest.raises(SafetyError):
+        dev.move_templates(601, 600)
+    assert len(dev.get_templates(601)) == 2 and len(dev.get_templates(600)) == 9

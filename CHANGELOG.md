@@ -5,6 +5,21 @@
 - New logo (integration brand icons regenerated from `docs/assets/logo.svg`).
 - Home Assistant integration: the access event no longer uses the deprecated
   `DeviceRegistry.async_get_device` (removed in Home Assistant 2027.8).
+- Home Assistant integration: no more "Unable to remove unknown job listener" error
+  when the entry is reloaded (listeners were removed twice on shutdown).
+- Library: removing or moving a single fingerprint no longer relies on a delete with two
+  conditions (`Pin` + `FingerID`). The MA500 (firmware 6.64) acknowledges such a delete
+  but removes nothing, so moved fingers stayed on the source UserID. A single finger is
+  now removed by deleting the user's templates (`Pin` only) and writing the others back.
+- Library: new `move_templates()` moves all the fingers of a UserID in one go (copies
+  first, then one delete); new `lock` property to run several calls as one sequence.
+- Emulator: like the MA500, ignores deletes with several conditions
+  (`DeviceState(multi_condition_delete=True)` restores the old behaviour).
+- Home Assistant integration: when the device stops answering, reconnection attempts
+  back off (5 s, doubling up to 60 s) instead of retrying on every poll; panel actions
+  still try at once. A panel operation now runs as one sequence, without polls in between.
+- Home Assistant integration: merging a UserID into a category moves its fingers in one
+  go and keeps their physical finger.
 
 ## 0.3.0 - 2026-11-22
 

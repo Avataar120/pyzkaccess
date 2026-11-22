@@ -327,8 +327,11 @@ class AccessManager:
         target = self.ensure_user(person, digit)
         if not existed and source.name and not self.client.get_user(target).name:
             self.person_save(person, source.name, self.store.person_meta(person).get("ha_person"))
-        for t in self.client.get_templates(user_id, with_data=False):
-            self.client.move_template(user_id, t.finger_id, target)
+        moved = self.client.move_templates(user_id, target)
+        for old_slot, new_slot in moved.items():
+            physical = self.store.physical_finger(user_id, old_slot)
+            if physical is not None:
+                self.store.set_physical_finger(target, new_slot, physical, self.person_user_ids(person))
         card, code = source.card_no, source.password
         self.client.delete_user(user_id)
         changes: dict[str, Any] = {}

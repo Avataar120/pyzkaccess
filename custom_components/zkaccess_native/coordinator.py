@@ -20,14 +20,14 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from homeassistant.util import dt as dt_util
 from datetime import datetime
 from pyzkaccess_native import (AccessEvent, DeviceInfo, DoorStatus, RepeatDetector, ZKAccess,
-                               ZKError)
+                               ZKConnectionError, ZKError)
 from pyzkaccess_native.events import DENIED_EVENTS, GRANTED_EVENTS
 
 from .const import (CONF_OPEN_SECONDS, CONF_POLL_INTERVAL, CONF_SYNC_CLOCK, DEFAULT_OPEN_SECONDS,
                     DEFAULT_POLL_INTERVAL, DEFAULT_SYNC_CLOCK, DOMAIN, ENROLL_TIMEOUT_SECONDS,
                     EVENT_ACCESS, PANEL_URL, PHONE_PAIR_TIMEOUT_SECONDS, TOGGLE_INACTIVE_STATES,
                     RESULT_ACTION, RESULT_DENIED, RESULT_GRANTED, RESULT_OTHER,
-                    SNAPSHOT_REFRESH_SECONDS)
+                    RETRY_MAX_SECONDS, RETRY_MIN_SECONDS, SNAPSHOT_REFRESH_SECONDS)
 from .manager import AccessManager
 from .store import AccessStore
 
@@ -98,8 +98,32 @@ class ZKCoordinator(DataUpdateCoordinator[ZKData]):
         self._last_raw: Optional[dict[str, Any]] = None
         #: device clock minus Home Assistant clock (seconds), measured before each sync
         self.clock_offset: Optional[float] = None
+        # Reconnection back-off: a device that stops answering is not hammered every poll.
+        self._retry_delay = RETRY_MIN_SECONDS
+        self._retry_at = 0.0
 
     # ------------------------------------------------------------ executor side
+    def _ensure_connected(self, force: bool = False) -> None:
+        """Open a session if needed. Between failed attempts the polling waits longer
+        and longer (``RETRY_MIN_SECONDS`` doubling up to ``RETRY_MAX_SECONDS``); an
+        explicit user operation (``force``) tries at once."""
+        if self.client.connected:
+            return
+        if not force and time.monotonic() < self._retry_at:
+            raise ZKConnectionError(f"next connection attempt in {self._retry_at - time.monotonic():.0f} s")
+        try:
+            self._connect()
+        except (ZKError, OSError):
+            self._connection_failed()
+            raise
+        self._retry_delay = RETRY_MIN_SECONDS
+        self._retry_at = 0.0
+
+    def _connection_failed(self) -> None:
+        self.client.close()
+        self._retry_at = time.monotonic() + self._retry_delay
+        self._retry_delay = min(self._retry_delay * 2, RETRY_MAX_SECONDS)
+
     def _connect(self) -> None:
         self.client.connect()
         self.info = self.client.info()
@@ -116,8 +140,11 @@ class ZKCoordinator(DataUpdateCoordinator[ZKData]):
             self.clock_offset = round((device_now - datetime.now()).total_seconds())
 
     def _poll(self) -> tuple[list[Any], Optional[dict[str, Any]], Optional[int]]:
-        if not self.client.connected:
-            self._connect()
+        with self.client.lock:
+            return self._poll_locked()
+
+    def _poll_locked(self) -> tuple[list[Any], Optional[dict[str, Any]], Optional[int]]:
+        self._ensure_connected()
         records = self.client.poll()
         raw = None
         if self._snapshot_at is None or time.monotonic() - self._snapshot_at > SNAPSHOT_REFRESH_SECONDS:
@@ -133,7 +160,8 @@ class ZKCoordinator(DataUpdateCoordinator[ZKData]):
         try:
             records, raw, enrolled = await self.hass.async_add_executor_job(self._poll)
         except (ZKError, OSError) as ex:
-            await self.hass.async_add_executor_job(self.client.close)
+            if self.client.connected:  # failed inside a session: close it, retry later
+                await self.hass.async_add_executor_job(self._connection_failed)
             raise UpdateFailed(f"cannot reach {self.client.host}: {ex}") from ex
         if raw is not None:
             self._apply_raw(raw)
@@ -366,9 +394,10 @@ class ZKCoordinator(DataUpdateCoordinator[ZKData]):
     async def async_run(self, func: Callable[..., T], *args: Any, refresh: bool = True) -> T:
         """Run a manager operation in the executor, then refresh the snapshot."""
         def job() -> T:
-            if not self.client.connected:
-                self._connect()
-            return func(*args)
+            # One uninterrupted sequence: the polling cannot slip between its commands.
+            with self.client.lock:
+                self._ensure_connected(force=True)
+                return func(*args)
 
         try:
             result = await self.hass.async_add_executor_job(job)
@@ -380,9 +409,9 @@ class ZKCoordinator(DataUpdateCoordinator[ZKData]):
 
     async def async_refresh_snapshot(self, silent: bool = False) -> None:
         def job() -> dict[str, Any]:
-            if not self.client.connected:
-                self._connect()
-            return self.manager.read_raw()
+            with self.client.lock:
+                self._ensure_connected(force=True)
+                return self.manager.read_raw()
 
         try:
             raw = await self.hass.async_add_executor_job(job)
@@ -435,8 +464,11 @@ class ZKCoordinator(DataUpdateCoordinator[ZKData]):
         self._unsub_nightly = async_track_time_change(self.hass, nightly, hour=4, minute=0, second=0)
 
     async def async_shutdown(self) -> None:
+        # Home Assistant also calls this on unload for coordinators bound to a config
+        # entry: clear each listener once so a second call does not remove it again.
         for unsub in (self._unsub_nightly, self._unsub_backup, self._unsub_tags):
             if unsub:
                 unsub()
+        self._unsub_nightly = self._unsub_backup = self._unsub_tags = None
         await super().async_shutdown()
         await self.hass.async_add_executor_job(self.client.disconnect)

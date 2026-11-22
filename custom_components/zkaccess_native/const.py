@@ -14,6 +14,8 @@ DEFAULT_SYNC_CLOCK = True
 
 #: How often the user / template / authorization tables are re-read (seconds).
 SNAPSHOT_REFRESH_SECONDS = 30
+RETRY_MIN_SECONDS = 5  # first wait after a failed connection, doubled after each failure
+RETRY_MAX_SECONDS = 60
 #: How long the enrollment wizard waits for a new fingerprint (seconds).
 ENROLL_TIMEOUT_SECONDS = 300
 #: Number of access events kept for the activity log.

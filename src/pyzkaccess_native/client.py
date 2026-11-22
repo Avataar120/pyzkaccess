@@ -129,6 +129,12 @@ class ZKAccess:
         self.disconnect()
 
     @property
+    def lock(self) -> "threading.RLock":
+        """The client lock (re-entrant). Hold it to run several calls as one
+        uninterrupted sequence, e.g. so a polling thread cannot slip in between."""
+        return self._lock
+
+    @property
     def connected(self) -> bool:
         return self._sock is not None
 
@@ -335,7 +341,8 @@ class ZKAccess:
         """Delete the records matching ``where``.
 
         Without a condition the device erases the **whole table**; this needs
-        ``allow_wipe=True``.
+        ``allow_wipe=True``. Prefer a single condition: some firmware (MA500)
+        ignore a delete with several conditions.
         """
         if not where and not allow_wipe:
             raise SafetyError(f"refusing to erase the whole {name!r} table "
@@ -524,38 +531,76 @@ class ZKAccess:
             self.write_records("templatev10", [self._known("templatev10", row)])
 
     def delete_templates(self, user_id: int, finger_id: Optional[int] = None) -> None:
-        where: Dict[str, int] = {"Pin": user_id}
-        if finger_id is not None:
-            where["FingerID"] = finger_id
-        self.delete_records("templatev10", where)
+        """Delete the templates of a user: all of them, or the one in ``finger_id``.
+
+        Some firmware (MA500, 6.64) acknowledge a delete with two conditions
+        (``Pin`` + ``FingerID``) but remove nothing, so a single finger is removed
+        by deleting all the user's templates (condition ``Pin`` only) and writing
+        the others back.
+        """
+        with self._lock:
+            if finger_id is None:
+                self.delete_records("templatev10", {"Pin": user_id})
+                return
+            templates = self.get_templates(user_id)
+            index = next((i for i, t in enumerate(templates) if t.finger_id == finger_id), None)
+            if index is None:
+                return
+            self._rewrite_templates(user_id, templates[:index] + templates[index + 1:])
+
+    def _rewrite_templates(self, user_id: int, keep: Sequence[Template]) -> None:
+        """Replace all the templates of ``user_id`` by ``keep`` (single-condition delete)."""
+        self.delete_records("templatev10", {"Pin": user_id})
+        for t in keep:
+            self.save_template(Template(user_id=user_id, finger_id=t.finger_id,
+                                        template=t.template, valid=t.valid))
 
     def move_template(self, user_id: int, finger_id: int, to_user_id: int,
                       to_finger_id: Optional[int] = None) -> int:
         """Move one fingerprint template to another (existing) user.
 
         Returns the finger slot used at the destination: ``to_finger_id``, or
-        the first free one (0-9). The template bytes are copied unchanged.
+        the first free one (0-9). The template bytes are copied unchanged; the
+        copy is written before the source is removed.
         """
         with self._lock:
-            source = [t for t in self.get_templates(user_id) if t.finger_id == finger_id]
-            if not source:
+            templates = self.get_templates(user_id)
+            index = next((i for i, t in enumerate(templates) if t.finger_id == finger_id), None)
+            if index is None:
                 raise SafetyError(f"user {user_id} has no template in finger slot {finger_id}")
             if to_finger_id is None:
-                used = {t.finger_id for t in self.get_templates(to_user_id, with_data=False)}
-                free = [i for i in range(10) if i not in used]
-                if not free:
-                    raise SafetyError(f"user {to_user_id} has no free finger slot")
-                to_finger_id = free[0]
-            moved = source[0]
+                to_finger_id = self._free_finger_slots(to_user_id, 1)[0]
+            moved = templates[index]
             self.save_template(Template(user_id=to_user_id, finger_id=to_finger_id,
                                         template=moved.template, valid=moved.valid))
-            self.delete_templates(user_id, finger_id)
-            # Defensive: firmware that stored several templates in the same slot lose
-            # them all on delete; write the others back.
-            for other in source[1:]:
-                self.save_template(Template(user_id=user_id, finger_id=finger_id,
-                                            template=other.template, valid=other.valid))
+            self._rewrite_templates(user_id, templates[:index] + templates[index + 1:])
             return to_finger_id
+
+    def move_templates(self, user_id: int, to_user_id: int) -> Dict[int, int]:
+        """Move all the templates of ``user_id`` to free slots of ``to_user_id``.
+
+        All copies are written first, then the source templates are removed with
+        one delete. Returns ``{source finger slot: destination finger slot}``.
+        """
+        with self._lock:
+            templates = self.get_templates(user_id)
+            if not templates:
+                return {}
+            slots = self._free_finger_slots(to_user_id, len(templates))
+            moved: Dict[int, int] = {}
+            for t, slot in zip(templates, slots):
+                self.save_template(Template(user_id=to_user_id, finger_id=slot,
+                                            template=t.template, valid=t.valid))
+                moved[t.finger_id] = slot
+            self.delete_records("templatev10", {"Pin": user_id})
+            return moved
+
+    def _free_finger_slots(self, user_id: int, count: int) -> List[int]:
+        used = {t.finger_id for t in self.get_templates(user_id, with_data=False)}
+        free = [i for i in range(10) if i not in used]
+        if len(free) < count:
+            raise SafetyError(f"user {user_id} has {len(free)} free finger slot(s), {count} needed")
+        return free[:count]
 
     # ------------------------------------------------------------ authorizations
     def get_authorizations(self, user_id: Optional[int] = None) -> List[Authorization]:

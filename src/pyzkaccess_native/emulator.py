@@ -47,7 +47,8 @@ class DeviceState:
     """The emulated device memory."""
 
     def __init__(self, table_config: str = DEFAULT_TABLE_CONFIG, password: str = "",
-                 buffer_threshold: int = 4096, chunk_size: int = 1024):
+                 buffer_threshold: int = 4096, chunk_size: int = 1024,
+                 multi_condition_delete: bool = False):
         self.tables: Dict[str, Table] = codec.parse_table_config(table_config)
         self.table_config = table_config
         self.data: Dict[str, List[Row]] = {name: [] for name in self.tables}
@@ -66,6 +67,9 @@ class DeviceState:
         self.clock_offset = 0
         self.lock = threading.Lock()
         self.next_uid = 1
+        # Like the MA500 (firmware 6.64): a DELETE_DATA with more than one condition is
+        # acknowledged but deletes nothing. Set True to emulate devices that honour it.
+        self.multi_condition_delete = multi_condition_delete
 
     # -- helpers used by tests ----------------------------------------------
     def push_event(self, event: int, user_id: int = 0, card: int = 0, door: int = 1,
@@ -129,6 +133,8 @@ class DeviceState:
     def delete_data(self, payload: bytes) -> None:
         table = self.table_by_index(payload[0])
         cond = self._parse_conditions(table, payload[1:])
+        if len(cond) > 1 and not self.multi_condition_delete:
+            return
         self.data[table.name] = [r for r in self.data[table.name] if not self._match(table, r, cond)]
 
     def rtlog(self) -> bytes:
