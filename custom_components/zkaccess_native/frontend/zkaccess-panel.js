@@ -99,7 +99,6 @@ const I18N = {
     toggle_help: "Toggle: one presentation, Home Assistant picks the category from the state of an entity (active = on, locked, armed…).",
     clock_offset: "Offset before the last sync: {s} s",
     on_hand: "Finger on the hand", not_placed: "— not placed —", nfc_tag: "NFC tag “{n}”", reload: "Reload from the device",
-    relay_confirm: "These UserIDs will lose the right to open the door (the device will refuse them; Home Assistant will still receive their actions): {ids}. Continue?",
     confirm: "Confirm",
     cat_active: "Active", cat_active_help: "Switch a category off for this person: the device refuses its fingers, card and code, and Home Assistant treats them as denied.",
     identify: "Identify a finger", identify_title: "Identify a finger",
@@ -200,7 +199,6 @@ const I18N = {
     toggle_help: "Bascule : un seul passage, Home Assistant choisit la catégorie selon l'état d'une entité (active = on, verrouillé, armé…).",
     clock_offset: "Écart avant la dernière remise à l'heure : {s} s",
     on_hand: "Doigt sur la main", not_placed: "— non placé —", nfc_tag: "Tag NFC « {n} »", reload: "Relire le lecteur",
-    relay_confirm: "Ces UserID vont perdre le droit d'ouvrir la porte (le lecteur les refusera ; Home Assistant recevra quand même leurs actions) : {ids}. Continuer ?",
     confirm: "Confirmer",
     cat_active: "Active", cat_active_help: "Désactiver une catégorie pour cette personne : le lecteur refuse ses doigts, sa carte et son code, et Home Assistant les traite comme refusés.",
     identify: "Identifier un doigt", identify_title: "Identifier un doigt",
@@ -672,20 +670,8 @@ class ZkAccessPanel extends HTMLElement {
         on: Number(this.val(`ct-on-${d}`) || 0), off: Number(this.val(`ct-off-${d}`) || 0) });
     }
     const numbering = this.val("numbering") || "category";
-    const old = this.cats(), affected = [];
-    for (const [d, c] of Object.entries(out)) {
-      if (c.relay || (old[d] && !old[d].relay)) continue;
-      for (const p of this.persons()) for (const cat of p.categories)
-        if (cat.digit === Number(d) && cat.authorized) affected.push(cat.user_id);
-    }
-    const save = async () => {
-      await this.call("categories/save", { categories: out, second_window: Number(this.val("second-window") || 3), numbering }, this.t("saved"));
-      await this.refresh();
-    };
-    if (affected.length) {
-      this._s.modal = { kind: "confirm", text: esc(this.t("relay_confirm", { ids: affected.join(", ") })), then: save, ok: this.t("confirm") };
-      this.render();
-    } else await save();
+    await this.call("categories/save", { categories: out, second_window: Number(this.val("second-window") || 3), numbering }, this.t("saved"));
+    await this.refresh();
   }
 
   async importFile(file) {

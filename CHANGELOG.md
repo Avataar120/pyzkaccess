@@ -41,6 +41,8 @@
   the integration reports them as denied, phones included; a second presentation or a
   toggle that leads to a switched-off category is denied too. Kept when the whole person
   is disabled and enabled again.
+- Panel: no more confirmation when a category's *Device relay* is unchecked (it only
+  changes the device's own output; automations receive `action` instead of `granted`).
 - README and `examples/home_assistant_automations.yaml`: automations for fingerprints,
   cards and phones (relay driven by Home Assistant, alarm, garage, rules by method, per
   person, double badge, repeated refusals, reader offline). `granted` and `action` only
