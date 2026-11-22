@@ -255,7 +255,7 @@ backup.restore(dev, backup.load("device.json"), wipe=True)  # exact copy
 ```python
 from pyzkaccess_native import discover, scan
 discover()                    # UDP broadcast: devices on the same subnet only
-scan(["192.168.20.0/24"])      # TCP port 4370 on each address: works across routers / VLANs
+scan(["192.168.5.0/24"])      # TCP port 4370 on each address: works across routers / VLANs
 ```
 
 `scan()` tries the device port on every address of the ranges (at most a /22 each, in
@@ -280,7 +280,7 @@ zkaccess [--host HOST] [--port 4370] [--password PWD] [-v|-vv] <command>
 | Command | Description |
 |---|---|
 | `discover` | find devices on the local network (UDP broadcast) |
-| `scan 192.168.20.0/24` | find devices on any subnet (TCP port 4370) |
+| `scan 192.168.5.0/24` | find devices on any subnet (TCP port 4370) |
 | `info` | serial number, firmware, doors, readers... |
 | `tables` | tables and fields supported by the device |
 | `params NAME... / NAME=VALUE...` | read / write parameters |
@@ -325,7 +325,7 @@ cards and codes without any YAML.
 2. Install **ZKAccess Native** and restart Home Assistant.
 3. **Settings → Devices & services → Add integration → ZKAccess Native**. The integration
    searches for devices: UDP broadcast on Home Assistant's network, and TCP port 4370 on
-   its subnet plus any range you add (e.g. `192.168.20.0/24` for a device on another subnet
+   its subnet plus any range you add (e.g. `192.168.5.0/24` for a device on another subnet
    or VLAN). Pick the device (or enter its address), then the communication password if any.
 4. Open **Access control** in the sidebar.
 

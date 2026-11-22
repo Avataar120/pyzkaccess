@@ -49,7 +49,7 @@
   5 s instead of 3 s (`RepeatDetector(window=5.0)`; `check(key, when=...)` takes a timestamp).
 - Library: `scan(networks)` finds devices on any subnet by trying TCP port 4370 on each
   address of the ranges (in parallel, at most /22 each) and reading their identity;
-  CLI `zkaccess scan 192.168.20.0/24`. UDP `discover()` only reaches the same subnet.
+  CLI `zkaccess scan 192.168.5.0/24`. UDP `discover()` only reaches the same subnet.
 - Home Assistant integration: adding a device starts with a search (UDP broadcast, plus a
   TCP scan of Home Assistant's subnet and of the ranges you type), then the device is
   picked from a list or entered by hand. The ranges of the devices already set up are searched
