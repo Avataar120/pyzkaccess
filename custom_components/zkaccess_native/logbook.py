@@ -1,34 +1,57 @@
-"""Readable logbook entries for access events."""
+"""Readable logbook entries for access events (English, or French when Home Assistant is)."""
 from __future__ import annotations
 
 from homeassistant.core import Event, HomeAssistant, callback
 
 from .const import DOMAIN, EVENT_ACCESS
 
-METHODS = {"fingerprint": "fingerprint", "card": "card", "code": "keypad code", "remote": "remote",
-           "phone": "phone"}
+TEXTS = {
+    "en": {"fingerprint": "fingerprint", "card": "card", "code": "keypad code", "remote": "remote",
+           "phone": "phone", "second": "second presentation", "denied": "denied",
+           "card_no": "Card #{n}", "user_id": "UserID {n}", "device": "Access control"},
+    "fr": {"fingerprint": "doigt", "card": "carte", "code": "code clavier", "remote": "à distance",
+           "phone": "téléphone", "second": "deuxième présentation", "denied": "refusé",
+           "card_no": "Carte n°{n}", "user_id": "UserID {n}", "device": "Contrôle d'accès"},
+}
+#: Device event names (as reported by the library) shown for refusals, in French.
+EVENT_NAMES_FR = {
+    "unregistered card": "carte inconnue",
+    "unregistered fingerprint": "doigt inconnu",
+    "access denied": "accès refusé",
+    "phone refused": "téléphone refusé",
+    "illegal time zone": "hors plage horaire",
+    "anti passback": "anti-passback",
+    "remote opening": "ouverture à distance",
+    "cancel alarm": "alarme annulée",
+}
 
 
 @callback
 def async_describe_events(hass: HomeAssistant, async_describe_event) -> None:
+    lang = "fr" if (hass.config.language or "").lower().startswith("fr") else "en"
+    txt = TEXTS[lang]
+
     @callback
     def describe(event: Event) -> dict[str, str]:
         d = event.data
-        who = d.get("person_name") or (f"UserID {d['user_id']}" if d.get("user_id") else None)
+        who = d.get("person_name") or (txt["user_id"].format(n=d["user_id"]) if d.get("user_id") else None)
         if not who:
-            who = f"Card #{d['card']}" if d.get("card") else "Access control"
-        method = METHODS.get(d.get("method"), d.get("method") or "")
+            who = txt["card_no"].format(n=d["card"]) if d.get("card") else txt["device"]
+        method = txt.get(d.get("method") or "", d.get("method") or "")
+        event_name = (d.get("event_name") or "").lower()
+        if lang == "fr":
+            event_name = EVENT_NAMES_FR.get(event_name, event_name)
         if d.get("result") in ("granted", "action"):
             what = d.get("category") or d.get("event_name")
-            message = f"{what} ({method})" if method else what
+            message = f"{what} ({method})" if method else str(what)
             if d.get("gesture") == "double":
-                message += ", second presentation"
+                message += f", {txt['second']}"
             if d.get("phone"):
                 message += f" — {d['phone']}"
         elif d.get("result") == "denied":
-            message = f"denied: {d.get('event_name', '').lower()}"
+            message = f"{txt['denied']} : {event_name}" if lang == "fr" else f"{txt['denied']}: {event_name}"
         else:
-            message = d.get("event_name", "")
+            message = event_name if lang == "fr" else d.get("event_name", "")
         return {"name": who, "message": message}
 
     async_describe_event(DOMAIN, EVENT_ACCESS, describe)

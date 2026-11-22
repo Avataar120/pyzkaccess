@@ -116,3 +116,17 @@ async def test_counts_right_after_boot(hass: HomeAssistant, emulator, monkeypatc
     await hass.async_block_till_done()
     assert hass.states.get("sensor.front_door_people").state == "0"
     await hass.config_entries.async_unload(entry.entry_id)
+
+
+def test_logbook_texts(hass: HomeAssistant):
+    from homeassistant.core import Event
+    from custom_components.zkaccess_native import logbook
+    seen = {}
+    for lang in ("en", "fr"):
+        hass.config.language = lang
+        logbook.async_describe_events(hass, lambda domain, event_type, fn: seen.__setitem__(lang, fn))
+    card = {"result": "granted", "person_name": "Alice", "category": "Open", "method": "card", "gesture": "double"}
+    denied = {"result": "denied", "card": 42, "method": "card", "event_name": "Unregistered card"}
+    assert seen["en"](Event(EVENT_ACCESS, card)) == {"name": "Alice", "message": "Open (card), second presentation"}
+    assert seen["fr"](Event(EVENT_ACCESS, card)) == {"name": "Alice", "message": "Open (carte), deuxième présentation"}
+    assert seen["fr"](Event(EVENT_ACCESS, denied)) == {"name": "Carte n°42", "message": "refusé : carte inconnue"}

@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Home Assistant integration: logbook entries in French when Home Assistant is in French
+  (method, second presentation, refusals). Tip: a logbook card with `target: device_id:` of
+  the device shows only its accesses.
+
 ## 0.4.1 - 2026-11-22
 
 - Home Assistant integration: the sidebar name of the *Access control* page can be changed
