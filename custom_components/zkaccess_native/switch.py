@@ -17,6 +17,9 @@ from . import ZKConfigEntry
 from .coordinator import ZKCoordinator, signal_changed
 from .entity import ZKEntity
 
+# Entities one device action at a time (device access is serialized by the coordinator anyway).
+PARALLEL_UPDATES = 1
+
 
 async def async_setup_entry(hass: HomeAssistant, entry: ZKConfigEntry,
                             add: AddEntitiesCallback) -> None:
@@ -42,7 +45,8 @@ PREFIX = {"fr": "Accès", "de": "Zugang", "es": "Acceso", "it": "Accesso", "nl":
 
 
 class ZKPersonAccess(ZKEntity, SwitchEntity):
-    _attr_icon = "mdi:account-key"
+    # translation_key gives the icon (icons.json); the name is set at runtime (_attr_name).
+    _attr_translation_key = "person_access"
 
     def __init__(self, coordinator: ZKCoordinator, person: int) -> None:
         super().__init__(coordinator, f"person_{person}_access")

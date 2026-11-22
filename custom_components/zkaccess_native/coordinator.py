@@ -70,6 +70,10 @@ class ZKCoordinator(IdentifyMixin, PhoneMixin, MaintenanceMixin, DataUpdateCoord
         self.response_time: Optional[float] = None
         #: monotonic time until which the device is booting after a reboot
         self._boot_until: Optional[float] = None
+        #: repairs: since when the device does not answer; automatic reboots in the last 24 h
+        self._unreachable_since: Optional[float] = None
+        self._unreachable_issue = False
+        self._slow_restarts: list[float] = []
         self._last_auto_restart: Optional[float] = None  # monotonic time of the last automatic reboot
         self._unsub_hourly: Optional[Callable[[], None]] = None
         #: restore running in the background after a finger was identified
@@ -150,11 +154,14 @@ class ZKCoordinator(IdentifyMixin, PhoneMixin, MaintenanceMixin, DataUpdateCoord
                 raise ConfigEntryAuthFailed(f"{self.client.host} refused the communication password") from ex
             if self.client.connected:
                 await self.hass.async_add_executor_job(self._connection_failed)
+            self._track_reachability(False)
             raise UpdateFailed(f"cannot reach {self.client.host}: {ex}") from ex
         except (ZKError, OSError) as ex:
             if self.client.connected:  # failed inside a session: close it, retry later
                 await self.hass.async_add_executor_job(self._connection_failed)
+            self._track_reachability(False)
             raise UpdateFailed(f"cannot reach {self.client.host}: {ex}") from ex
+        self._track_reachability(True)
         if raw is not None:
             self._apply_raw(raw)
         if self.enrollment:

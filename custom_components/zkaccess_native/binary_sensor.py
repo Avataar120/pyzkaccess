@@ -9,6 +9,9 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from . import ZKConfigEntry
 from .entity import ZKEntity
 
+# Entities read from the coordinator (device access is serialized by the coordinator anyway).
+PARALLEL_UPDATES = 0
+
 
 async def async_setup_entry(hass: HomeAssistant, entry: ZKConfigEntry,
                             add: AddEntitiesCallback) -> None:

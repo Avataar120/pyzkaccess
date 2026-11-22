@@ -5,11 +5,14 @@ import logging
 import time
 from typing import Any, Optional
 
+from homeassistant.core import callback
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.util import dt as dt_util
 
-from .const import (RESTART_WAIT_SECONDS, SLOW_RESTART_COOLDOWN_SECONDS, SLOW_THRESHOLD_SECONDS)
+from .const import (DOMAIN, RESTART_WAIT_SECONDS, SLOW_RESTART_COOLDOWN_SECONDS, SLOW_RESTARTS_ISSUE_COUNT,
+                    SLOW_THRESHOLD_SECONDS, UNREACHABLE_ISSUE_SECONDS)
 from .helpers import signal_changed
 
 _LOGGER = logging.getLogger(__package__ + ".coordinator")
@@ -17,6 +20,51 @@ _LOGGER = logging.getLogger(__package__ + ".coordinator")
 
 class MaintenanceMixin:
     """Part of ZKCoordinator (mixed in); uses its client, store, manager and snapshot."""
+
+    # ------------------------------------------------------------------- repairs
+    def _issue_id(self, kind: str) -> str:
+        return f"{kind}_{self.config_entry.entry_id}"
+
+    def _issue_placeholders(self) -> dict[str, str]:
+        return {"name": self.config_entry.title.strip() or str(self.config_entry.unique_id),
+                "host": self.client.host}
+
+    @callback
+    def _track_reachability(self, reachable: bool) -> None:
+        """Repairs: "device unreachable" after 30 min without an answer, removed as soon as it
+        answers again (also after a restart of Home Assistant)."""
+        if reachable:
+            if self._unreachable_since is not None or self._unreachable_issue:
+                self._unreachable_since = None
+                self._unreachable_issue = False
+                ir.async_delete_issue(self.hass, DOMAIN, self._issue_id("unreachable"))
+            return
+        now = time.monotonic()
+        if self._unreachable_since is None:
+            self._unreachable_since = now
+        elif not self._unreachable_issue and now - self._unreachable_since > UNREACHABLE_ISSUE_SECONDS:
+            self._unreachable_issue = True
+            ir.async_create_issue(
+                self.hass, DOMAIN, self._issue_id("unreachable"), is_fixable=False,
+                severity=ir.IssueSeverity.WARNING, translation_key="unreachable",
+                translation_placeholders={**self._issue_placeholders(),
+                                          "minutes": str(UNREACHABLE_ISSUE_SECONDS // 60)})
+
+    @callback
+    def _track_slow_restarts(self, restarted: bool) -> None:
+        """Repairs: "rebooted for slowness N times in 24 h", removed after 24 h without one."""
+        now = time.time()
+        if restarted:
+            self._slow_restarts.append(now)
+        self._slow_restarts = [t for t in self._slow_restarts if now - t < 24 * 3600]
+        if len(self._slow_restarts) >= SLOW_RESTARTS_ISSUE_COUNT:
+            ir.async_create_issue(
+                self.hass, DOMAIN, self._issue_id("slow_restarts"), is_fixable=False,
+                severity=ir.IssueSeverity.WARNING, translation_key="slow_restarts",
+                translation_placeholders={**self._issue_placeholders(),
+                                          "count": str(len(self._slow_restarts))})
+        elif not self._slow_restarts:
+            ir.async_delete_issue(self.hass, DOMAIN, self._issue_id("slow_restarts"))
 
     # ---------------------------------------------------------------- maintenance
     @property
@@ -48,6 +96,9 @@ class MaintenanceMixin:
                             self.client.host, value, SLOW_THRESHOLD_SECONDS)
             self._last_auto_restart = time.monotonic()
             await self.async_restart_device("slow")
+            self._track_slow_restarts(True)
+        else:
+            self._track_slow_restarts(False)
         return self.response_time
 
     async def async_restart_device(self, reason: str) -> None:

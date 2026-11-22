@@ -140,6 +140,11 @@
       "restart": {
         "name": "Redémarrer"
       }
+    },
+    "switch": {
+      "person_access": {
+        "name": "Accès"
+      }
     }
   },
   "services": {
@@ -354,6 +359,19 @@
     },
     "enroll_running": {
       "message": "Un enregistrement d'empreinte est en cours."
+    },
+    "device_rebooting": {
+      "message": "Le lecteur redémarre : réessayez dans {seconds} s."
+    }
+  },
+  "issues": {
+    "unreachable": {
+      "title": "{name} ne répond plus",
+      "description": "Home Assistant n'a pas pu joindre le lecteur {host} depuis plus de {minutes} minutes : aucun accès n'est relayé. Vérifiez son alimentation et son câble réseau. Ce message disparaît de lui-même dès que le lecteur répond de nouveau."
+    },
+    "slow_restarts": {
+      "title": "{name} a dû être redémarré {count} fois en 24 heures",
+      "description": "Le lecteur {host} est devenu lent (plus de 0,5 s par requête) et a été redémarré {count} fois ces dernières 24 heures. Si cela continue, vérifiez son alimentation, son réseau, et qu'aucun autre programme (ZKAccess, un script) ne lui parle en même temps. Ce message disparaît après 24 heures sans redémarrage de ce type."
     }
   }
 }

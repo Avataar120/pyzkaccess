@@ -1,0 +1,100 @@
+{
+  "entity": {
+    "binary_sensor": {
+      "door": {
+        "default": "mdi:door-closed",
+        "state": {
+          "on": "mdi:door-open"
+        }
+      },
+      "alarm": {
+        "default": "mdi:alarm-light-outline",
+        "state": {
+          "on": "mdi:alarm-light"
+        }
+      },
+      "connected": {
+        "default": "mdi:lan-disconnect",
+        "state": {
+          "on": "mdi:lan-connect"
+        }
+      }
+    },
+    "button": {
+      "open_door": {
+        "default": "mdi:door-open"
+      },
+      "sync_clock": {
+        "default": "mdi:clock-check-outline"
+      }
+    },
+    "event": {
+      "access": {
+        "default": "mdi:fingerprint"
+      }
+    },
+    "sensor": {
+      "persons": {
+        "default": "mdi:account-group"
+      },
+      "fingerprints": {
+        "default": "mdi:fingerprint"
+      },
+      "cards": {
+        "default": "mdi:card-account-details-outline"
+      },
+      "last_person": {
+        "default": "mdi:account-clock"
+      },
+      "clock_offset": {
+        "default": "mdi:clock-alert-outline"
+      },
+      "response_time": {
+        "default": "mdi:timer-outline"
+      }
+    },
+    "switch": {
+      "person_access": {
+        "default": "mdi:account-key",
+        "state": {
+          "off": "mdi:account-cancel"
+        }
+      }
+    }
+  },
+  "services": {
+    "set_user": {
+      "service": "mdi:account-edit"
+    },
+    "delete_user": {
+      "service": "mdi:account-remove"
+    },
+    "grant": {
+      "service": "mdi:key-plus"
+    },
+    "revoke": {
+      "service": "mdi:key-remove"
+    },
+    "open_door": {
+      "service": "mdi:door-open"
+    },
+    "sync_clock": {
+      "service": "mdi:clock-check-outline"
+    },
+    "list_users": {
+      "service": "mdi:account-multiple"
+    },
+    "backup": {
+      "service": "mdi:content-save"
+    },
+    "set_access": {
+      "service": "mdi:account-key"
+    },
+    "rename_person": {
+      "service": "mdi:rename"
+    },
+    "restart": {
+      "service": "mdi:restart"
+    }
+  }
+}

@@ -531,6 +531,11 @@ after the clock sync and the backup; and reboot it when its response time, measu
 is over 0.5 s (at most once every 6 hours). A MA500 was seen slowing down to 0.5 s per request
 after a busy day, which made everything slow (identification especially), and a reboot fixed it.
 Action `zkaccess_native.restart` reboots on demand.
+
+While the reader reboots (about 25 s), an action you start gets the message "the reader is
+rebooting, try again in N s". **Settings → Repairs** shows an issue when the reader has not
+answered for more than 30 minutes, or had to be rebooted for slowness twice in 24 hours; it
+disappears by itself once things are back to normal.
 The device clock is also synced every night at 04:00.
 
 **Diagnostics** can be downloaded from the device page (personal data, card numbers, names

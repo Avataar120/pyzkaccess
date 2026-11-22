@@ -8,6 +8,7 @@ from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.loader import async_get_integration
 from pyzkaccess_native import User
@@ -155,3 +156,5 @@ async def async_unload_entry(hass: HomeAssistant, entry: ZKConfigEntry) -> bool:
 
 async def async_remove_entry(hass: HomeAssistant, entry: ZKConfigEntry) -> None:
     await AccessStore(hass, entry.entry_id).async_remove()
+    for kind in ("unreachable", "slow_restarts"):
+        ir.async_delete_issue(hass, DOMAIN, f"{kind}_{entry.entry_id}")

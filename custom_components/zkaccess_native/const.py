@@ -31,6 +31,9 @@ PHONE_ECHO_SECONDS = 10
 SLOW_THRESHOLD_SECONDS = 0.5
 SLOW_RESTART_COOLDOWN_SECONDS = 6 * 3600
 RESTART_WAIT_SECONDS = 25  # no reconnection attempt while the device boots
+# Repairs: a device unreachable for this long, or rebooted for slowness this often in 24 h.
+UNREACHABLE_ISSUE_SECONDS = 30 * 60
+SLOW_RESTARTS_ISSUE_COUNT = 2
 #: Number of access events kept for the activity log.
 HISTORY_SIZE = 500
 

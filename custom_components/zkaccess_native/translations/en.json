@@ -140,6 +140,11 @@
       "restart": {
         "name": "Reboot"
       }
+    },
+    "switch": {
+      "person_access": {
+        "name": "Access"
+      }
     }
   },
   "services": {
@@ -354,6 +359,19 @@
     },
     "enroll_running": {
       "message": "An enrollment is running."
+    },
+    "device_rebooting": {
+      "message": "The reader is rebooting: try again in {seconds} s."
+    }
+  },
+  "issues": {
+    "unreachable": {
+      "title": "{name} does not answer",
+      "description": "Home Assistant has not reached the reader at {host} for more than {minutes} minutes: no access is relayed. Check its power supply and its network cable. This message disappears by itself as soon as the reader answers again."
+    },
+    "slow_restarts": {
+      "title": "{name} had to be rebooted {count} times in 24 hours",
+      "description": "The reader at {host} became slow (over 0.5 s per request) and was rebooted {count} times in the last 24 hours. If this goes on, check its power supply and network, and whether another program (ZKAccess, a script) talks to it at the same time. This message disappears after 24 hours without such a reboot."
     }
   }
 }

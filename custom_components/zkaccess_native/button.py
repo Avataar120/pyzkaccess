@@ -10,6 +10,9 @@ from . import ZKConfigEntry
 from .const import CONF_OPEN_SECONDS, DEFAULT_OPEN_SECONDS
 from .entity import ZKEntity
 
+# Entities one device action at a time (device access is serialized by the coordinator anyway).
+PARALLEL_UPDATES = 1
+
 
 async def async_setup_entry(hass: HomeAssistant, entry: ZKConfigEntry,
                             add: AddEntitiesCallback) -> None:

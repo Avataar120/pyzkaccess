@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+- Home Assistant integration: the store is saved safely from device operations, which run
+  outside the event loop (Home Assistant's delayed save was scheduled from that thread, and the
+  file was written from data an operation could still be changing).
+- Home Assistant integration: during the 25 s a device takes to reboot, an action started by the
+  user (panel, action, button, switch) stops at once with "the reader is rebooting, try again in
+  N s"; internal operations (schedules, identification) wait for the end of the boot.
+- Home Assistant integration: **Repairs** issues, removed by themselves: device unreachable for
+  more than 30 minutes; device rebooted for slowness at least twice in 24 hours.
+- Home Assistant integration: icons in `icons.json` (entities and actions), `PARALLEL_UPDATES`
+  declared, diagnostics include the maintenance settings, last response time and reboot.
+- Code: the coordinator is split into `identify.py`, `phones.py`, `maintenance.py` and
+  `helpers.py` (no behaviour change).
+
 ## 0.5.3 - 2026-11-22
 
 - Home Assistant integration: the automatic reboot of a slow device could not happen during
