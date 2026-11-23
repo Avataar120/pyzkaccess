@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.1 - 2026-11-23
 
 - Home Assistant integration, panel and activity card: dates and times follow the user's Home
   Assistant profile (12 h / 24 h, and the server or browser time zone), as in the rest of HA.
