@@ -457,14 +457,36 @@ other with menu `3`.
 **Identifying a finger.** The device reports which UserID recognized a finger, not which
 of its fingerprints. *Identify a finger* (on a person, or from a free finger: *Already
 enrolled? Identify it on the reader*) uses the reader as a sensor: place a finger and the
-page shows the person, the UserID and the fingerprint slot, places it on the hand when a
-finger was chosen, and offers to delete it. While identifying, the reader's events run no
+page shows the person, the UserID and the fingerprint slot. Started from a person, a finger
+of someone else is refused (the page says whose finger it is, and which one) and nothing is
+changed. Otherwise the page shows the current finger on the hand (or *not assigned*) and the
+category, and offers to delete it; *Confirm* records the finger on the hand, by default the
+current one (or the finger chosen to start), which can be changed first. While identifying, the reader's events run no
 automation and are not logged (it stops after 60 s without a finger). When the UserID has
 several fingerprints, they are separated for a moment: each is copied to a temporary
 UserID without rights (9990-9999), the UserID's own copies are removed, and the page asks
 for the same finger again; then everything is put back and checked. The isolation is
 recorded first, so a restart or an error puts the fingerprints back as well. No backup is
 taken meanwhile. The device may still drive its own lock output for a recognized finger.
+The category can be changed from the same dialog: the fingerprint then moves to the
+UserID of that category.
+
+**Journaled fingerprint operations.** Every operation that writes or removes
+fingerprints, or rewrites a user record (identification, moving a fingerprint to another
+category, deleting one, assigning an unassigned UserID, renaming, card and code, preparing
+an enrollment, slot repair), first writes the state of the UserIDs it touches to a journal
+on disk: user record, rights, and each template with its data. Afterwards the device is
+read back and compared with what the operation must have produced: the same templates,
+byte for byte, in the same finger slots, bound to the user's own internal slot, a slot no
+other user has. On any difference or error, those UserIDs are written back exactly as they
+were and the operation reports it. If the operation was interrupted (Home Assistant
+restarted, the device froze or was switched off), the journal left on disk is settled at
+the next poll, retried every minute until it succeeds, with a notification; nothing else
+(identification, automatic backup) runs meanwhile. The journal holds biometric data: it
+is kept next to the backups, readable by Home Assistant only, and removed once settled.
+Fingerprints or UserIDs that disappear from the device without an operation of Home
+Assistant (keypad, other software, device fault) raise a notification pointing to the
+backups.
 
 **Learning a card.** Click *Learn a card* and present the card: the device reports it as
 unknown, the page shows its number and writes it to the chosen person and category.
@@ -530,7 +552,10 @@ Options: polling interval (default 1 s, 0.3 to 3 s), door open duration, clock s
 after the clock sync and the backup; and reboot it when its response time, measured every hour,
 is over 0.5 s (at most once every 6 hours). A MA500 was seen slowing down to 0.5 s per request
 after a busy day, which made everything slow (identification especially), and a reboot fixed it.
-Action `zkaccess_native.restart` reboots on demand.
+Action `zkaccess_native.restart` reboots on demand. The same page shows the **response time
+history**: a chart of the measurements (24 h, 7 days, 30 days, 1 year) read from Home
+Assistant's recorder, with the 0.5 s threshold and the reader reboots. Beyond 7 days it shows
+the hourly (or daily) average with the min-max band, which the recorder keeps without limit.
 
 While the reader reboots (about 25 s), an action you start gets the message "the reader is
 rebooting, try again in N s". **Settings → Repairs** shows an issue when the reader has not

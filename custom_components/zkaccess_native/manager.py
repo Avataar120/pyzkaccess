@@ -23,6 +23,7 @@ from pyzkaccess_native import (CategoryScheme, DoorSettings, SafetyError, Templa
 from pyzkaccess_native import backup as zk_backup
 
 from .const import CATEGORY_TYPES, IDENTIFY_PINS, NUMBERING_PLAIN
+from .journal import Journal, JournalError, State
 from .store import AccessStore
 
 _LOGGER = logging.getLogger(__name__)
@@ -66,6 +67,15 @@ class AccessManager:
         self.store = store
         self.backup_dir = backup_dir
         self._door_count = door_count
+        #: every operation that touches fingerprints or rewrites users goes through it
+        self.journal = Journal(backup_dir / "journal.json")
+
+    @staticmethod
+    def _created(state: State, user_id: int) -> None:
+        """Expected state: ``user_id`` exists after the operation (it may be created)."""
+        entry = state[str(user_id)]
+        if entry["user"] is None:
+            entry["user"] = {"Pin": user_id}
 
     @property
     def numbering(self) -> Numbering:
@@ -118,6 +128,9 @@ class AccessManager:
         free = [pin for pin in IDENTIFY_PINS if pin not in existing]
         if len(free) < len(templates):
             raise SafetyError("not enough free temporary UserIDs (9990-9999)")
+        # Journal first: the templates (data included) are on disk before anything changes,
+        # and the end of the identification must give back exactly this state.
+        before = self.journal.begin(self.client, f"identify {user_id}", [user_id, *IDENTIFY_PINS])
         mapping: dict[int, int] = {}
         try:
             for t, pin in zip(templates, free):
@@ -132,8 +145,10 @@ class AccessManager:
             for t, pin in zip(templates, mapping):
                 self.client.write_records("templatev10", [self._known_template(self._template_row(pin, 0, t, slots[pin]))])
         except Exception:
-            for pin in mapping:
-                self._delete_temporary(pin)
+            try:
+                self.journal.abort(self.client, f"identify {user_id}", before)
+            except Exception:  # noqa: BLE001 - journal kept, settled by the coordinator
+                _LOGGER.exception("identify %s: putting back after a failed copy failed (journal kept)", user_id)
             raise
         return mapping, {t.finger_id: t for t in templates}, owner_slot
 
@@ -153,6 +168,29 @@ class AccessManager:
 
     def identify_restore(self, user_id: int, mapping: dict[int, int],
                          templates: dict[int, Template] | None = None, slot: int | None = None) -> None:
+        """Put the fingerprints back (see :meth:`_identify_restore`), then check the result
+        against the journal: exactly the same templates, bound to the user's slot, no
+        temporary UserID left. Otherwise everything is written back from the journal."""
+        op = f"identify {user_id}"
+        before = self.journal.load()["before"] if self.journal.exists() else None
+        try:
+            self._identify_restore(user_id, mapping, templates, slot)
+        except Exception:
+            if before is None:
+                raise
+            _LOGGER.exception("%s: putting the fingerprints back failed; writing them back from the journal", op)
+            self.journal.abort(self.client, op, before)
+            return
+        if before is not None:
+            try:
+                self.journal.finish(self.client, op, before, before)
+            except JournalError:
+                raise
+            except SafetyError as ex:  # a difference was found and written back: done
+                _LOGGER.warning("%s", ex)
+
+    def _identify_restore(self, user_id: int, mapping: dict[int, int],
+                          templates: dict[int, Template] | None = None, slot: int | None = None) -> None:
         """Put the templates back on ``user_id``, check them, then delete the temporary
         UserIDs. Safe to run again after a partial restore. With ``templates`` and ``slot``
         (kept from the copy) nothing is re-read but the check; without them (after a
@@ -184,6 +222,11 @@ class AccessManager:
             self.client.rebind_templates(user_id, slot)
         for pin in mapping:
             self._delete_temporary(pin)
+
+    def repair_slots(self, user_ids: list[int]) -> list[int]:
+        """Rebind templates bound to another user's slot (journaled: same templates after)."""
+        return self.journal.run(self.client, f"repair slots of {user_ids}", user_ids,
+                                self.client.repair_template_slots, strict=False)
 
     @staticmethod
     def fingerprint(raw: dict[str, Any]) -> str:
@@ -282,11 +325,16 @@ class AccessManager:
             raise SafetyError(f"name too long (max {NAME_MAX} bytes)")
         if person is None:
             person = self.next_person()
-        user_ids = self.person_user_ids(person)
-        if not user_ids:
-            user_ids = [self.ensure_user(person, 0)]
-        for uid in user_ids:
-            self.client.save_user(User(user_id=uid, name=name))
+        first = self.numbering.user_id(person, 0)
+        scope = self.person_user_ids(person) or [first]
+
+        def rename() -> None:
+            # Rewriting a user record can move its internal slot on the MA500: journaled.
+            user_ids = self.person_user_ids(person) or [self.ensure_user(person, 0)]
+            for uid in user_ids:
+                self.client.save_user(User(user_id=uid, name=name))
+        self.journal.run(self.client, f"rename person {person}", scope, rename,
+                         lambda st, _r: self._created(st, first) if first in scope else None)
         self.store.person_meta(person)["ha_person"] = ha_person
         self.store.save()
         return person
@@ -372,7 +420,10 @@ class AccessManager:
             del self.store.data["fingers"][key]
 
     def finger_delete(self, user_id: int, finger_id: int) -> None:
-        self.client.delete_templates(user_id, finger_id)
+        def change(state: State, _result: Any) -> None:
+            state[str(user_id)]["templates"].pop(str(finger_id), None)
+        self.journal.run(self.client, f"delete fingerprint {user_id}/{finger_id}", [user_id],
+                         lambda: self.client.delete_templates(user_id, finger_id), change)
         self.store.set_physical_finger(user_id, finger_id, None)
         self.store.save()
 
@@ -393,9 +444,20 @@ class AccessManager:
             raise SafetyError(f"UserID {user_id} does not belong to a person")
         person, current = split
         if digit is not None and digit != current:
-            target = self.ensure_user(person, digit)
+            target = self.numbering.user_id(person, digit)
+            source = user_id
+
+            def move() -> int:
+                self.ensure_user(person, digit)
+                return self.client.move_template(source, finger_id, target)
+
+            def change(state: State, new_slot: int) -> None:
+                moved = state[str(source)]["templates"].pop(str(finger_id))
+                self._created(state, target)
+                state[str(target)]["templates"][str(new_slot)] = moved
             old_physical = self.store.physical_finger(user_id, finger_id)
-            new_slot = self.client.move_template(user_id, finger_id, target)
+            new_slot = self.journal.run(self.client, f"move fingerprint {source}/{finger_id} to {target}",
+                                        [source, target], move, change)
             self.store.set_physical_finger(user_id, finger_id, None)
             user_id, finger_id = target, new_slot
             if physical is None:
@@ -408,7 +470,10 @@ class AccessManager:
     def enroll_start(self, person: int, digit: int) -> tuple[int, list[int]]:
         """Prepare a fingerprint enrollment on the keypad: returns the UserID to type
         and the finger slots it already uses."""
-        user_id = self.ensure_user(person, digit)
+        user_id = self.numbering.user_id(person, digit)
+        # Creating a user: the device may hand out a slot another user has (journaled check).
+        self.journal.run(self.client, f"prepare enrollment {user_id}", [user_id],
+                         lambda: self.ensure_user(person, digit), lambda st, _r: self._created(st, user_id))
         baseline = [t.finger_id for t in self.client.get_templates(user_id, with_data=False)]
         return user_id, baseline
 
@@ -429,14 +494,19 @@ class AccessManager:
                 raise SafetyError(f"card {card} is already used by UserID {owner[0]}")
         if code not in ("keep", None) and (not str(code).isdigit() or not 1 <= len(str(code)) <= 6):
             raise SafetyError("the keypad code must be 1 to 6 digits")
-        user_id = self.ensure_user(person, digit)
+        user_id = self.numbering.user_id(person, digit)
         changes: dict[str, Any] = {}
         if card != "keep":
             changes["card_no"] = int(card) if card else 0
         if code != "keep":
             changes["password"] = str(code) if code else ""
-        if changes:
-            self.client.save_user(User(user_id=user_id, **changes))
+
+        def write() -> None:
+            self.ensure_user(person, digit)
+            if changes:
+                self.client.save_user(User(user_id=user_id, **changes))
+        self.journal.run(self.client, f"card/code of {user_id}", [user_id], write,
+                         lambda st, _r: self._created(st, user_id))
         return user_id
 
     # -------------------------------------------------------------- unassigned
@@ -448,24 +518,38 @@ class AccessManager:
         target = self.numbering.user_id(person, digit)
         if target == user_id:
             return target
+        if self.store.category(digit) is None:
+            raise SafetyError(f"category {digit} is not configured")
         existed = self.client.get_user(target) is not None
-        target = self.ensure_user(person, digit)
-        if not existed and source.name and not self.client.get_user(target).name:
-            self.person_save(person, source.name, self.store.person_meta(person).get("ha_person"))
-        moved = self.client.move_templates(user_id, target)
+        scope = sorted({user_id, target, *self.person_user_ids(person)})
+
+        def assign() -> dict[int, int]:
+            self.ensure_user(person, digit)
+            if not existed and source.name and not self.client.get_user(target).name:
+                for uid in self.person_user_ids(person):
+                    self.client.save_user(User(user_id=uid, name=source.name))
+            moved = self.client.move_templates(user_id, target)
+            self.client.delete_user(user_id)
+            changes: dict[str, Any] = {}
+            if source.card_no:
+                changes["card_no"] = source.card_no
+            if source.password:
+                changes["password"] = source.password
+            if changes:
+                self.client.save_user(User(user_id=target, **changes))
+            return moved
+
+        def change(state: State, moved: dict[int, int]) -> None:
+            templates = state[str(user_id)]["templates"]
+            self._created(state, target)
+            for old_slot, new_slot in moved.items():
+                state[str(target)]["templates"][str(new_slot)] = templates[str(old_slot)]
+            state[str(user_id)] = {"user": None, "auths": [], "templates": {}}
+        moved = self.journal.run(self.client, f"assign UserID {user_id} to {target}", scope, assign, change)
         for old_slot, new_slot in moved.items():
             physical = self.store.physical_finger(user_id, old_slot)
             if physical is not None:
                 self.store.set_physical_finger(target, new_slot, physical, self.person_user_ids(person))
-        card, code = source.card_no, source.password
-        self.client.delete_user(user_id)
-        changes: dict[str, Any] = {}
-        if card:
-            changes["card_no"] = card
-        if code:
-            changes["password"] = code
-        if changes:
-            self.client.save_user(User(user_id=target, **changes))
         self._forget_fingers(user_id)
         self.store.save()
         return target

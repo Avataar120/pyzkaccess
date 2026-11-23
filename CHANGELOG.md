@@ -1,5 +1,32 @@
 # Changelog
 
+## Unreleased
+
+- Home Assistant integration, panel and activity card: dates and times follow the user's Home
+  Assistant profile (12 h / 24 h, and the server or browser time zone), as in the rest of HA.
+- Home Assistant integration, settings: the *Used by* column of the categories lists every
+  person (it stopped at the first four, without saying so).
+- Home Assistant integration, finger identification: a finger of another person than the one
+  being edited is refused (the panel says whose finger it is, and which one) and nothing is
+  changed; the panel shows the current finger on the hand and the category; the finger is no
+  longer placed at once, *Confirm* records it, by default on the current finger (or the one
+  chosen to start). The category can be changed from the same dialog (the fingerprint
+  moves to the UserID of that category).
+- Home Assistant integration: journaled fingerprint operations. Identification, moving a
+  fingerprint to another category, deleting one, assigning an unassigned UserID, renaming,
+  card/code, enrollment preparation and slot repair write the state of the UserIDs they touch
+  (templates with their data) to a journal on disk first, then check the device byte for byte
+  (finger slots, data, own and unshared internal slot). Any difference or error writes these
+  UserIDs back as they were; an interrupted operation (restart, frozen device) is settled at
+  the next poll and retried every minute, with a notification. The end of an identification
+  is checked against the journal, and falls back to it when the temporary copies are lost.
+- Home Assistant integration: notification when fingerprints or UserIDs disappear from the
+  device without an operation of Home Assistant.
+- Home Assistant integration: response time history in the panel (Settings): chart of the
+  hourly measurements read from the recorder (24 h, 7 days, 30 days, 1 year; hourly or daily
+  average with min-max band beyond 7 days), with the reboot threshold and the reader reboots,
+  which are now kept for a year.
+
 ## 0.6.0 - 2026-11-22
 
 - Home Assistant integration: the store is saved safely from device operations, which run

@@ -89,6 +89,12 @@ const I18N = {
     autosave: "Changes are saved at once.",
     maintenance: "Maintenance", nightly_restart: "Reboot the reader every night at 04:00 (after the clock sync and backup)",
     slow_restart: "Reboot the reader when it answers slowly (over 0.5 s, measured every hour; at most every 6 h)",
+    rt_history: "Response time history", rt_24h: "24 h", rt_7d: "7 days", rt_30d: "30 days", rt_1y: "1 year",
+    rt_threshold: "reboot threshold {s} s", rt_no_data: "No measurement in this period yet.", rt_loading: "Loading…",
+    rt_no_recorder: "The history needs the Recorder integration (and the response time sensor enabled).",
+    rt_summary: "{n} measurements · median {m} s · max {x} s", rt_summary_stats: "average {m} s · max {x} s",
+    rt_band: "line: hourly average · band: min–max", rt_band_day: "line: daily average · band: min–max",
+    rt_restart: "Reader rebooted ({r})", rt_restarts: "dashed lines: reader reboots",
     response_time: "Response time", not_measured: "not measured yet", measure_now: "Measure now", restart_device: "Reboot the reader",
     restart_confirm: "Reboot the reader now? It is unavailable for about 25 seconds (no access during that time); data and lock are untouched.",
     restart_sent: "Reboot sent: back in about 25 s", response_measured: "Response time: {s} s",
@@ -121,7 +127,7 @@ const I18N = {
     identify_other: "That was not the same finger: place the finger from the first step again.",
     identify_restoring: "Putting the fingerprints back…",
     identify_found: "Fingerprint found", identify_found_of: "{name} · UserID {u} · slot {s}",
-    identify_placed: "Placed on: {finger}", identify_other_person: "This fingerprint belongs to {name}: it was not placed on this hand.",
+    identify_wrong_person: "This finger belongs to {name} ({finger}). Identification stopped.", identify_current: "Current finger: <b style=\"font-weight:500\">{finger}</b>", finger_unassigned: "not assigned", identify_category: "Category: <b style=\"font-weight:500\">{c}</b>",
     identify_next: "Identify another finger", identify_timeout: "No finger within 60 s.", identify_cancelled: "Identification cancelled.",
     identify_error: "Identification failed: {e}",
   },
@@ -199,6 +205,12 @@ const I18N = {
     autosave: "Les modifications sont enregistrées immédiatement.",
     maintenance: "Maintenance", nightly_restart: "Redémarrer le lecteur chaque nuit à 4 h (après la mise à l'heure et la sauvegarde)",
     slow_restart: "Redémarrer le lecteur s'il répond lentement (plus de 0,5 s, mesuré chaque heure ; au plus toutes les 6 h)",
+    rt_history: "Historique du temps de réponse", rt_24h: "24 h", rt_7d: "7 jours", rt_30d: "30 jours", rt_1y: "1 an",
+    rt_threshold: "seuil de redémarrage {s} s", rt_no_data: "Aucune mesure sur cette période pour l'instant.", rt_loading: "Chargement…",
+    rt_no_recorder: "L'historique nécessite l'intégration Recorder (et le capteur de temps de réponse activé).",
+    rt_summary: "{n} mesures · médiane {m} s · max {x} s", rt_summary_stats: "moyenne {m} s · max {x} s",
+    rt_band: "trait : moyenne horaire · bande : min–max", rt_band_day: "trait : moyenne journalière · bande : min–max",
+    rt_restart: "Lecteur redémarré ({r})", rt_restarts: "pointillés : redémarrages du lecteur",
     response_time: "Temps de réponse", not_measured: "pas encore mesuré", measure_now: "Mesurer maintenant", restart_device: "Redémarrer le lecteur",
     restart_confirm: "Redémarrer le lecteur maintenant ? Il est indisponible environ 25 secondes (aucun accès pendant ce temps) ; données et gâche ne sont pas touchées.",
     restart_sent: "Redémarrage envoyé : retour dans environ 25 s", response_measured: "Temps de réponse : {s} s",
@@ -231,12 +243,25 @@ const I18N = {
     identify_other: "Ce n'est pas le même doigt : reposez le doigt de la première étape.",
     identify_restoring: "Remise en place des empreintes…",
     identify_found: "Empreinte trouvée", identify_found_of: "{name} · UserID {u} · emplacement {s}",
-    identify_placed: "Placée sur : {finger}", identify_other_person: "Cette empreinte appartient à {name} : elle n'a pas été placée sur cette main.",
+    identify_wrong_person: "Ce doigt appartient à {name} ({finger}). Identification arrêtée.", identify_current: "Doigt actuel : <b style=\"font-weight:500\">{finger}</b>", finger_unassigned: "non attribué", identify_category: "Catégorie : <b style=\"font-weight:500\">{c}</b>",
     identify_next: "Identifier un autre doigt", identify_timeout: "Aucun doigt en 60 s.", identify_cancelled: "Identification annulée.",
     identify_error: "Échec de l'identification : {e}",
   },
 };
 
+// Date/time options following the user's Home Assistant profile: 12/24 h (time_format
+// "language" / "system" / "12" / "24", same rule as the HA frontend) and time zone ("server" =
+// the HA server's zone, "local" = the browser's).
+const haTimeOpts = (hass) => {
+  const loc = hass?.locale || {};
+  const lang = loc.language || hass?.language || undefined;
+  let hour12;
+  if (loc.time_format === "12" || loc.time_format === "24") hour12 = loc.time_format === "12";
+  else hour12 = new Date(2023, 0, 1, 22).toLocaleString(loc.time_format === "system" ? undefined : lang).includes("10");
+  const opts = { hour12 };
+  if (loc.time_zone === "server" && hass?.config?.time_zone) opts.timeZone = hass.config.time_zone;
+  return [lang, opts];
+};
 const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
 const STYLE = `
@@ -409,8 +434,9 @@ class ZkAccessPanel extends HTMLElement {
   fmtTime(iso) {
     if (!iso) return "";
     const d = new Date(iso);
-    return isNaN(d) ? iso : d.toLocaleString(this._hass.locale?.language || undefined,
-      { weekday: "short", hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" });
+    const [lang, o] = haTimeOpts(this._hass);
+    return isNaN(d) ? iso : d.toLocaleString(lang,
+      { ...o, weekday: "short", hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" });
   }
 
   cats() { return this._s.state?.categories || {}; }
@@ -487,7 +513,7 @@ class ZkAccessPanel extends HTMLElement {
     const s = this._s, d = el.dataset;
     switch (a) {
       case "tab": s.view = d.v; s.person = null; s.finger = null;
-        if (d.v === "door") this.loadDoor(); if (d.v === "settings") { this.loadBackups(); this.loadTags(); this.loadDoor(); } break;
+        if (d.v === "door") this.loadDoor(); if (d.v === "settings") { this.loadBackups(); this.loadTags(); this.loadDoor(); this.loadResponse(); } break;
       case "device": s.entryId = el.value; s.person = null; await this._loadDevice(); return;
       case "open-person": s.person = Number(d.p); s.finger = null; s.view = "people"; break;
       case "back": s.person = null; s.finger = null; break;
@@ -579,10 +605,16 @@ class ZkAccessPanel extends HTMLElement {
         catch (e) { s.modal.id = { state: "error", error: e.message || String(e) }; }
         break;
       }
-      case "identify-place": {
-        const r = s.modal.id; const physical = el.value === "" ? null : Number(el.value);
-        await this.call("finger/update", { user_id: r.user_id, finger_id: r.finger_id, physical });
-        r.placed = physical != null; s.modal.physical = physical; await this.refresh(); return;
+      case "identify-confirm": {
+        const r = s.modal.id; const v = this.val("idf-physical"); const physical = v === "" || v == null ? null : Number(v);
+        const dv = this.val("idf-digit"); const digit = dv === "" || dv == null ? r.digit : Number(dv);
+        if (digit != null && digit !== r.digit) {
+          // Another category: the fingerprint moves to that UserID (journaled and verified on the device).
+          await this.call("finger/update", { user_id: r.user_id, finger_id: r.finger_id, digit, physical });
+        } else if (physical !== (r.current_physical ?? null)) {
+          await this.call("finger/update", { user_id: r.user_id, finger_id: r.finger_id, physical });
+        }
+        s.modal = null; await this.refresh(); return;
       }
       case "identify-delete": {
         const r = s.modal.id;
@@ -595,7 +627,7 @@ class ZkAccessPanel extends HTMLElement {
         try { s.state = await this.ws("state", { refresh: true }); s.history = await this.ws("history", { limit: 300 }); }
         catch (e) { this.toast(`${this.t("error")}: ${e.message || e}`, true); }
         finally { this.busy(-1); }
-        if (s.view === "settings") { this.loadDoor(); this.loadBackups(); }
+        if (s.view === "settings") { this.loadDoor(); this.loadBackups(); this.loadResponse(); }
         break;
       }
       case "filter": s.filter = d.f; break;
@@ -615,7 +647,12 @@ class ZkAccessPanel extends HTMLElement {
         break;
       case "measure-response": {
         const v = await this.call("device/response_time", {}); await this.refresh();
-        if (v != null) this.toast(this.t("response_measured", { s: Number(v).toFixed(3) })); return;
+        if (v != null) this.toast(this.t("response_measured", { s: Number(v).toFixed(3) }));
+        setTimeout(() => this.loadResponse(), 1500);  // the recorder writes the new state shortly after
+        return;
+      }
+      case "rt-range": {
+        s.rt = { ...(s.rt || {}), range: d.r, points: null }; this.render(); await this.loadResponse(); return;
       }
       case "backup-now": await this.call("backup/create", {}, this.t("saved")); await this.loadBackups(); return;
       case "backup-download": {
@@ -676,6 +713,117 @@ class ZkAccessPanel extends HTMLElement {
   async loadTags() {
     try { this._s.haTags = await this._hass.connection.sendMessagePromise({ type: "tag/list" }); } catch (e) { this._s.haTags = []; }
     this.render();
+  }
+
+  async loadResponse() {
+    // History of the response time sensor, read from Home Assistant's recorder: raw states
+    // (one measure per hour, plus "Measure now") up to 7 days, hourly / daily statistics beyond.
+    const s = this._s, id = s.state?.response_entity;
+    const rt = s.rt || (s.rt = { range: "7d" });
+    const days = { "24h": 1, "7d": 7, "30d": 30, "1y": 365 }[rt.range] || 7;
+    const end = new Date(), start = new Date(end.getTime() - days * 864e5);
+    const send = (m) => this._hass.connection.sendMessagePromise(m);
+    let points = [], kind = "raw", error = null;
+    try {
+      if (!id) throw new Error("no sensor");
+      const raw = async () => {
+        const r = await send({ type: "history/history_during_period", start_time: start.toISOString(), end_time: end.toISOString(),
+          entity_ids: [id], minimal_response: true, no_attributes: true, significant_changes_only: false });
+        // A state holds until the next one; "unknown" / "unavailable" break the line.
+        return (r[id] || []).map((x) => ({ t: (x.lu ?? x.lc) * 1000, v: Number.parseFloat(x.s) }));
+      };
+      if (days <= 7) {
+        points = await raw();
+      } else {
+        kind = days > 31 ? "day" : "hour";
+        const r = await send({ type: "recorder/statistics_during_period", start_time: start.toISOString(), end_time: end.toISOString(),
+          statistic_ids: [id], period: kind, types: ["mean", "min", "max"], units: {} });
+        points = (r[id] || []).map((x) => ({ t: typeof x.start === "number" ? x.start : Date.parse(x.start), v: x.mean, min: x.min, max: x.max }))
+          .filter((p) => p.v != null);
+        // No statistics yet (they are compiled every hour): show the measurements themselves.
+        if (!points.length) { points = await raw(); kind = "raw"; }
+      }
+    } catch (e) { error = "no_recorder"; points = []; }
+    if (s.rt !== rt || rt.range !== (s.rt?.range)) return;  // another period was chosen meanwhile
+    Object.assign(rt, { points, kind, error, start: start.getTime(), end: end.getTime() });
+    this.render();
+  }
+
+  renderResponseChart() {
+    const rt = this._s.rt || { range: "7d" }, st = this._s.state;
+    const thr = st?.slow_threshold ?? 0.5;
+    const ranges = ["24h", "7d", "30d", "1y"].map((r) =>
+      `<button class="btn sm ${rt.range === r ? "primary" : ""}" data-act="rt-range" data-r="${r}">${this.t("rt_" + r)}</button>`).join("");
+    const head = `<div class="row" style="flex-wrap:wrap;gap:6px"><h2 style="margin:0 auto 0 0">${this.t("rt_history")}</h2>${ranges}</div>`;
+    if (rt.points == null) return `${head}<div class="muted" style="margin-top:8px">${this.t("rt_loading")}</div>`;
+    if (rt.error) return `${head}<div class="muted" style="margin-top:8px">${this.t("rt_no_recorder")}</div>`;
+    const pts = rt.points, finite = pts.filter((p) => Number.isFinite(p.v));
+    if (!finite.length) return `${head}<div class="muted" style="margin-top:8px">${this.t("rt_no_data")}</div>`;
+    // Drawn at the real width of the card (1 SVG unit = 1 px): readable text on a phone too.
+    const W = Math.round(Math.max(300, Math.min(900, this.offsetWidth < 760 ? this.offsetWidth - 70 : 640)));
+    const H = 220, L = 46, R = 12, T = 12, B = 28, t0 = rt.start, t1 = rt.end;
+    const top = Math.max(thr * 1.15, ...finite.map((p) => Math.max(p.v, p.max ?? 0)) .map((v) => v * 1.1));
+    const step = [0.01, 0.02, 0.05, 0.1, 0.2, 0.25, 0.5, 1, 2, 5, 10].find((x) => top / x <= 5) || 20;
+    const ymax = Math.ceil(top / step) * step;
+    const x = (t) => (L + (Math.min(Math.max(t, t0), t1) - t0) / (t1 - t0) * (W - L - R)).toFixed(1);
+    const y = (v) => (T + (1 - v / ymax) * (H - T - B)).toFixed(1);
+    const [lang, to] = haTimeOpts(this._hass);
+    const fmtTick = (t) => new Date(t).toLocaleString(lang, rt.range === "24h" ? { ...to, hour: "2-digit", minute: "2-digit" }
+      : { ...to, ...(rt.range === "1y" ? { month: "short", year: "2-digit" } : { day: "2-digit", month: "2-digit" }) });
+    const fmtFull = (t) => new Date(t).toLocaleString(lang, { ...to, day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+    const nf = (v, d = 3) => Number(v).toLocaleString(lang, { minimumFractionDigits: d, maximumFractionDigits: d });
+    let grid = "";
+    for (let v = 0; v <= ymax + 1e-9; v += step) {
+      grid += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--zk-line)" stroke-width="1"/>
+        <text x="${L - 6}" y="${y(v)}" dy="4" text-anchor="end" font-size="11" fill="var(--zk-muted)">${nf(v, step < 0.1 ? 2 : 1)}</text>`;
+    }
+    for (let i = 0; i <= 4; i++) {
+      if (W < 420 && i % 2) continue;  // fewer date labels on a phone
+      const t = t0 + (t1 - t0) * i / 4;
+      grid += `<text x="${x(t)}" y="${H - 8}" text-anchor="${i === 0 ? "start" : i === 4 ? "end" : "middle"}" font-size="11" fill="var(--zk-muted)">${esc(fmtTick(t))}</text>`;
+    }
+    let lines = "", band = "", dots = "", summary = "", legend = "";
+    if (rt.kind === "raw") {
+      // Step line: each measure holds until the next one (or until "unknown").
+      let seg = [];
+      const flush = () => { if (seg.length) lines += `<polyline points="${seg.join(" ")}" fill="none" stroke="var(--zk-accent)" stroke-width="2"/>`; seg = []; };
+      pts.forEach((p, i) => {
+        if (!Number.isFinite(p.v)) { flush(); return; }
+        const next = pts[i + 1] ? pts[i + 1].t : t1;
+        seg.push(`${x(p.t)},${y(p.v)}`, `${x(next)},${y(p.v)}`);
+        dots += `<circle cx="${x(p.t)}" cy="${y(p.v)}" r="3" fill="var(--zk-accent)"><title>${esc(fmtFull(p.t))} · ${nf(p.v)} s</title></circle>`;
+        if (!pts[i + 1] || !Number.isFinite(pts[i + 1].v)) flush();
+      });
+      flush();
+      const sorted = finite.map((p) => p.v).sort((a, b) => a - b);
+      summary = this.t("rt_summary", { n: finite.length, m: nf(sorted[Math.floor(sorted.length / 2)]), x: nf(sorted[sorted.length - 1]) });
+    } else {
+      const gap = (rt.kind === "day" ? 864e5 : 36e5) * 1.5;
+      let seg = [], up = [], down = [];
+      const flush = () => {
+        if (seg.length) lines += `<polyline points="${seg.join(" ")}" fill="none" stroke="var(--zk-accent)" stroke-width="2"/>`;
+        if (up.length) band += `<polygon points="${[...up, ...down.reverse()].join(" ")}" fill="var(--zk-accent)" fill-opacity="0.16"/>`;
+        seg = []; up = []; down = [];
+      };
+      finite.forEach((p, i) => {
+        if (i && p.t - finite[i - 1].t > gap) flush();
+        seg.push(`${x(p.t)},${y(p.v)}`); up.push(`${x(p.t)},${y(p.max ?? p.v)}`); down.push(`${x(p.t)},${y(p.min ?? p.v)}`);
+        dots += `<circle cx="${x(p.t)}" cy="${y(p.v)}" r="6" fill="transparent"><title>${esc(fmtFull(p.t))} · ${nf(p.v)} s (min ${nf(p.min ?? p.v)}, max ${nf(p.max ?? p.v)})</title></circle>`;
+      });
+      flush();
+      const mean = finite.reduce((a, p) => a + p.v, 0) / finite.length;
+      summary = this.t("rt_summary_stats", { m: nf(mean), x: nf(Math.max(...finite.map((p) => p.max ?? p.v))) });
+      legend = this.t(rt.kind === "day" ? "rt_band_day" : "rt_band");
+    }
+    const restarts = (st?.restart_history || []).filter((r) => { const t = Date.parse(r.time); return t >= t0 && t <= t1; });
+    const marks = restarts.map((r) => { const t = Date.parse(r.time);
+      return `<line x1="${x(t)}" x2="${x(t)}" y1="${T}" y2="${H - B}" stroke="var(--zk-muted)" stroke-width="1.5" stroke-dasharray="3 3"><title>${esc(fmtFull(t))} · ${esc(this.t("rt_restart", { r: this.t("restart_" + r.reason) }))}</title></line>`; }).join("");
+    const thrLine = `<line x1="${L}" x2="${W - R}" y1="${y(thr)}" y2="${y(thr)}" stroke="#d92d20" stroke-width="1.5" stroke-dasharray="6 4"/>
+      <text x="${W - R}" y="${y(thr)}" dy="-5" text-anchor="end" font-size="11" fill="#d92d20">${esc(this.t("rt_threshold", { s: nf(thr, 1) }))}</text>`;
+    return `${head}
+      <div style="overflow-x:auto;margin-top:8px"><svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${esc(this.t("rt_history"))}" style="max-width:100%;height:auto;display:block">
+        ${grid}${band}${thrLine}${marks}${lines}${dots}</svg></div>
+      <div class="muted" style="font-size:12px">${esc(summary)}${legend ? ` · ${esc(legend)}` : ""}${restarts.length ? ` · ${esc(this.t("rt_restarts"))}` : ""}</div>`;
   }
 
   async loadBackups() {
@@ -876,20 +1024,32 @@ class ZkAccessPanel extends HTMLElement {
       case "other": body = `${warn(this.t("identify_other"))}${spin(this.t("identify_again"))}`; break;
       case "restoring": body = spin(this.t("identify_restoring")); break;
       case "found": {
-        const mine = r.found_person != null && r.found_person === m.person;
-        const name = r.found_name || (r.found_person != null ? this.t("person_no", { n: r.found_person }) : "?");
-        const place = mine ? `<label class="field">${this.t("on_hand")}<select data-act="identify-place">
-          <option value="">${this.t("not_placed")}</option>${FINGER_KEYS.map((_, i) =>
-            `<option value="${i}" ${r.placed && i === m.physical ? "selected" : ""}>${esc(this.fingerName(i))}</option>`).join("")}</select></label>` : "";
+        const name = r.found_name || (r.found_person != null ? this.t("person_no", { n: r.found_person }) : `UserID ${r.user_id}`);
+        const current = r.current_physical != null ? this.fingerName(r.current_physical) : this.t("finger_unassigned");
+        // 1) The finger must belong to the person being edited: otherwise say whose it is and stop.
+        if (m.person != null && r.found_person !== m.person) {
+          body = warn(esc(this.t("identify_wrong_person", { finger: current.toLowerCase(), name })));
+          actions = `<button class="btn" data-act="identify-start" data-i="${m.physical ?? ""}">${this.t("identify_next")}</button>
+            <button class="btn primary" data-act="close-modal">${this.t("close")}</button>`;
+          break;
+        }
+        // 2) Current assignment: physical finger + category.
+        const cat = r.category_name || (r.digit != null ? this.catName(r.digit) : "—");
+        // 3) On confirmation: same finger as now by default (else the finger clicked), can be changed.
+        const def = r.current_physical ?? m.physical ?? null;
         body = `<div class="detail" style="margin:0;flex-direction:column;align-items:stretch">
           <b style="font-weight:500;color:#067647">✓ ${this.t("identify_found")}</b>
           <div class="mono">${esc(this.t("identify_found_of", { name, u: r.user_id, s: r.finger_id }))}</div>
-          ${r.placed ? `<div>${this.t("identify_placed", { finger: esc(this.fingerName(m.physical)) })}</div>` : ""}
-          ${m.physical != null && !mine ? `<div class="muted">${this.t("identify_other_person", { name: esc(name) })}</div>` : ""}
-          ${place}</div>`;
+          <div>${this.t("identify_current", { finger: esc(current) })}</div>
+          ${this.plain() ? "" : `<div>${this.t("identify_category", { c: esc(cat) })}</div>
+          <label class="field">${this.t("category")}<select id="idf-digit">${Object.keys(this.cats()).map((d) =>
+            `<option value="${d}" ${Number(d) === r.digit ? "selected" : ""}>${esc(this.catName(d))}</option>`).join("")}</select></label>`}
+          <label class="field">${this.t("on_hand")}<select id="idf-physical">
+          <option value="" ${def == null ? "selected" : ""}>${this.t("not_placed")}</option>${FINGER_KEYS.map((_, i) =>
+            `<option value="${i}" ${i === def ? "selected" : ""}>${esc(this.fingerName(i))}</option>`).join("")}</select></label></div>`;
         actions = `<button class="btn danger" data-act="identify-delete" style="margin-right:auto">${this.t("delete_fingerprint")}</button>
           <button class="btn" data-act="identify-start" data-i="">${this.t("identify_next")}</button>
-          <button class="btn primary" data-act="close-modal">${this.t("done")}</button>`;
+          <button class="btn primary" data-act="identify-confirm">${this.t("confirm")}</button>`;
         break;
       }
       case "timeout": body = warn(this.t("identify_timeout")); break;
@@ -1079,7 +1239,7 @@ class ZkAccessPanel extends HTMLElement {
       rows.push(`<tr><td class="mono" style="font-weight:700;font-size:16px">${d}</td><td>${typeSel}</td>
         <td><input id="ct-name-${d}" value="${esc(c?.name || "")}" maxlength="32" style="width:150px" aria-label="${this.t("display_name")} ${d}"></td>
         <td><input type="checkbox" id="ct-relay-${d}" ${c?.relay ? "checked" : ""} aria-label="${this.t("relay")} ${d}"></td>
-        <td>${secondSel}</td><td class="muted">${esc((users[d] || []).slice(0, 4).join(", "))}</td></tr>${toggleRow}`);
+        <td>${secondSel}</td><td class="muted" style="min-width:140px">${(users[d] || []).map((n) => `<span style="white-space:nowrap">${esc(n)}</span>`).join(", ")}</td></tr>${toggleRow}`);
     }
     const backups = this._s.backups.map((b) => `<div class="row"><div style="flex:1 1 240px"><b style="font-weight:500">${this.fmtTime(b.created)}</b>
       <div class="muted">${esc(b.reason)} · ${b.users} UserID · ${b.fingerprints} ${this.t("fingerprints")}</div></div>
@@ -1101,7 +1261,8 @@ class ZkAccessPanel extends HTMLElement {
           <label class="row muted">${this.t("keep")}<input id="bk-keep" type="number" min="1" max="500" value="${bk.keep ?? 30}" style="width:80px"></label>
           <button class="btn primary" style="margin-left:auto" data-act="backup-now">${this.t("backup_now")}</button></div>
         <div class="list">${backups}</div>
-        <div class="actions" style="justify-content:flex-start;margin-top:10px"><button class="btn" data-act="backup-import">${this.t("import_file")}</button></div></section></div>
+        <div class="actions" style="justify-content:flex-start;margin-top:10px"><button class="btn" data-act="backup-import">${this.t("import_file")}</button></div></section>
+        <section class="card">${this.renderResponseChart()}</section></div>
       <div class="side"><section class="card"><h2>${this.t("general")}</h2>
         <label class="field" style="margin-bottom:12px">${this.t("panel_title")}<input id="panel-title" maxlength="40" placeholder="${esc(this.t("title"))}" value="${esc(st?.settings?.panel_title || "")}"></label>
         <label class="chk"><input type="checkbox" id="notify-keypad" ${st?.settings?.notify_keypad !== false ? "checked" : ""}>${this.t("notify_keypad")}</label>

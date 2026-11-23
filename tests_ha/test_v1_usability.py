@@ -198,6 +198,8 @@ async def test_restart_and_response_time(hass: HomeAssistant, emulator, entry, m
     coord._boot_until = None                                        # skip the 25 s boot wait
     await coord.async_check_response_time()
     assert len(emulator.state.controls) == n + 1
+    # Reboots are kept for the panel's response time chart.
+    assert [r["reason"] for r in coord.store.data["restart_history"]] == ["button", "slow"]
     # Option off -> no reboot even when slow.
     coord._last_auto_restart = None
     coord.maintenance["slow_restart"] = False

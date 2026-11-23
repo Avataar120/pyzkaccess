@@ -7,10 +7,11 @@ import voluptuous as vol
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
 from .const import (CONF_POLL_INTERVAL, DEFAULT_SECOND_WINDOW, DOMAIN, NUMBERING_CATEGORY, NUMBERING_PLAIN,
-                    POLL_INTERVAL_MAX, POLL_INTERVAL_MIN)
+                    POLL_INTERVAL_MAX, POLL_INTERVAL_MIN, SLOW_THRESHOLD_SECONDS)
 from .coordinator import ZKCoordinator, poll_interval, signal_changed, signal_event
 from .panel import async_rename_panel
 
@@ -57,6 +58,11 @@ def _state(coord: ZKCoordinator) -> dict[str, Any]:
         "clock_offset": coord.clock_offset,
         "response_time": coord.response_time,
         "last_restart": coord.store.data.get("last_restart"),
+        # Response time chart: the panel reads the recorder history of this sensor.
+        "response_entity": er.async_get(coord.hass).async_get_entity_id(
+            "sensor", DOMAIN, f"{coord.config_entry.unique_id}_response_time"),
+        "slow_threshold": SLOW_THRESHOLD_SECONDS,
+        "restart_history": coord.store.data.get("restart_history", []),
     }
 
 

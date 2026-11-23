@@ -25,7 +25,7 @@ class IdentifyMixin:
     def start_identify(self, person: Optional[int], physical: Optional[int]) -> dict[str, Any]:
         if self.identify is not None:
             raise HomeAssistantError(translation_domain=DOMAIN, translation_key="identify_running")
-        if self.store.data.get("identify_pending"):
+        if self.store.data.get("identify_pending") or self.manager.journal.exists():
             raise HomeAssistantError(translation_domain=DOMAIN, translation_key="identify_undoing")
         if self.enrollment is not None:
             raise HomeAssistantError(translation_domain=DOMAIN, translation_key="enroll_running")
@@ -91,6 +91,9 @@ class IdentifyMixin:
         self.hass.async_create_task(self._async_identify_isolate(idf, uid))
 
     async def _async_identify_isolate(self, idf: dict[str, Any], user_id: int) -> None:
+        # While isolating, the journal on disk belongs to this identification: the
+        # coordinator must not settle it in between (see _journal_due).
+        self._identify_isolating = True
         try:
             mapping, templates, slot = await self.async_run(self.manager.identify_copy, user_id, refresh=False, background=True)
             self._identify_cache = (user_id, templates, slot)
@@ -98,7 +101,8 @@ class IdentifyMixin:
             self.store.data["identify_pending"] = {"user_id": user_id,
                                                    "temps": {str(k): v for k, v in mapping.items()}}
             await self.store.async_save_now()
-            await self.async_run(self.manager.identify_hide, user_id, refresh=False, background=True)
+            if self.identify is idf:  # not cancelled meanwhile: only then remove the originals
+                await self.async_run(self.manager.identify_hide, user_id, refresh=False, background=True)
         except HomeAssistantError as ex:
             _LOGGER.warning("Identification: isolating UserID %s failed: %s", user_id, ex)
             if self.identify is idf:
@@ -106,6 +110,8 @@ class IdentifyMixin:
             self._identify_notify({**idf, "state": "error", "error": str(ex)})
             await self._async_identify_restore()
             return
+        finally:
+            self._identify_isolating = False
         if self.identify is not idf:  # cancelled meanwhile
             await self._async_identify_restore()
             return
@@ -149,17 +155,16 @@ class IdentifyMixin:
 
     @callback
     def _identify_found(self, user_id: int, finger_id: int) -> None:
+        # Nothing is placed here: the panel shows the current assignment (physical finger and
+        # category), refuses a finger of another person, and records the choice on confirmation.
         idf = self.identify or {}
         who = self._user_index.get(user_id) or {}
-        placed = False
-        if idf.get("physical") is not None and who and who.get("person") == idf.get("person"):
-            self.store.set_physical_finger(user_id, finger_id, idf["physical"],
-                                           self.person_user_ids(who["person"]) or [user_id])
-            self.store.save()
-            placed = True
+        digit = who.get("digit")
+        category = self.store.category(digit) if digit is not None else None
         result = {**idf, "state": "found", "user_id": user_id, "finger_id": finger_id,
                   "found_person": who.get("person"), "found_name": who.get("person_name"),
-                  "placed": placed}
+                  "current_physical": self.store.physical_finger(user_id, finger_id),
+                  "digit": digit, "category_name": (category or {}).get("name")}
         self.identify = None
         self.async_rebuild()
         self._identify_notify(result)

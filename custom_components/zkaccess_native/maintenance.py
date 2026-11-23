@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import time
+from datetime import timedelta
 from typing import Any, Optional
 
 from homeassistant.core import callback
@@ -14,6 +15,10 @@ from homeassistant.util import dt as dt_util
 from .const import (DOMAIN, RESTART_WAIT_SECONDS, SLOW_RESTART_COOLDOWN_SECONDS, SLOW_RESTARTS_ISSUE_COUNT,
                     SLOW_THRESHOLD_SECONDS, UNREACHABLE_ISSUE_SECONDS)
 from .helpers import signal_changed
+
+#: reboots kept for the response time chart
+RESTART_HISTORY_DAYS = timedelta(days=366)
+RESTART_HISTORY_MAX = 1000
 
 _LOGGER = logging.getLogger(__package__ + ".coordinator")
 
@@ -109,7 +114,13 @@ class MaintenanceMixin:
             # No reconnection attempt while it boots: hammering a booting device froze it once.
             self._retry_at = self._boot_until = time.monotonic() + RESTART_WAIT_SECONDS
         await self.async_run(job, refresh=False, background=reason in ("nightly", "slow"))
-        self.store.data["last_restart"] = {"time": dt_util.now().isoformat(timespec="seconds"), "reason": reason}
+        entry = {"time": dt_util.now().isoformat(timespec="seconds"), "reason": reason}
+        self.store.data["last_restart"] = entry
+        # Kept for the response time chart of the panel (one year, bounded).
+        history = self.store.data.setdefault("restart_history", [])
+        history.append(entry)
+        cutoff = (dt_util.now() - RESTART_HISTORY_DAYS).isoformat(timespec="seconds")
+        self.store.data["restart_history"] = [r for r in history if r["time"] >= cutoff][-RESTART_HISTORY_MAX:]
         self.store.save()
         _LOGGER.info("%s rebooted (%s)", self.client.host, reason)
         async_dispatcher_send(self.hass, signal_changed(self.config_entry.entry_id))

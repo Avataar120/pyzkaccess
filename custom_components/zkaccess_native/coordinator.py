@@ -75,6 +75,10 @@ class ZKCoordinator(IdentifyMixin, PhoneMixin, MaintenanceMixin, DataUpdateCoord
         self._unreachable_issue = False
         self._slow_restarts: list[float] = []
         self._slot_repair_running = False
+        #: settling a journal left by an interrupted fingerprint operation
+        self._journal_recovering = False
+        self._journal_retry_at = 0.0
+        self._identify_isolating = False
         self._last_auto_restart: Optional[float] = None  # monotonic time of the last automatic reboot
         self._unsub_hourly: Optional[Callable[[], None]] = None
         #: restore running in the background after a finger was identified
@@ -180,6 +184,8 @@ class ZKCoordinator(IdentifyMixin, PhoneMixin, MaintenanceMixin, DataUpdateCoord
         self._publish(events)
         if self.store.data.get("identify_pending") and self.identify is None and not self._identify_restoring:
             self.hass.async_create_task(self._async_identify_restore())
+        elif self._journal_due():
+            self.hass.async_create_task(self._async_journal_recover())
         if self.phone_pairing and time.monotonic() > self.phone_pairing["until"]:
             self.phone_pairing = None
             async_dispatcher_send(self.hass, signal_changed(self.config_entry.entry_id), {"pair": {"state": "timeout"}})
@@ -223,6 +229,7 @@ class ZKCoordinator(IdentifyMixin, PhoneMixin, MaintenanceMixin, DataUpdateCoord
             for uid in sorted(user_ids - set(known)):
                 self._notify_new_user(uid)
         self.store.data["known_user_ids"] = sorted(user_ids)
+        self._check_lost_fingerprints(raw, known)
         self.store.save()
         async_dispatcher_send(self.hass, signal_changed(self.config_entry.entry_id))
         if device_changed and not first and self.store.data["backup"].get("on_change", True):
@@ -241,7 +248,8 @@ class ZKCoordinator(IdentifyMixin, PhoneMixin, MaintenanceMixin, DataUpdateCoord
         """Safety net: every template must be bound to its own user's internal slot. One that
         is not fails, or matches whoever owns that slot (seen on the MA500 after a user moved
         slot). Rebind them at once and tell the user."""
-        if self._slot_repair_running or self.store.data.get("identify_pending"):
+        if (self._slot_repair_running or self.store.data.get("identify_pending")
+                or self.manager.journal.exists()):
             return
         slots = {u["Pin"]: u.get("UID") for u in raw["users"]}
         wrong = sorted({t["Pin"] for t in raw["templates"]
@@ -252,7 +260,7 @@ class ZKCoordinator(IdentifyMixin, PhoneMixin, MaintenanceMixin, DataUpdateCoord
 
         async def repair() -> None:
             try:
-                fixed = await self.async_run(self.client.repair_template_slots, background=True)
+                fixed = await self.async_run(self.manager.repair_slots, wrong, background=True)
             except HomeAssistantError as ex:
                 _LOGGER.error("Fingerprints of UserIDs %s are bound to another slot; repair failed: %s", wrong, ex)
                 return
@@ -268,6 +276,74 @@ class ZKCoordinator(IdentifyMixin, PhoneMixin, MaintenanceMixin, DataUpdateCoord
                     title=f"{self.config_entry.title}: fingerprints repaired",
                     notification_id=f"{DOMAIN}_{self.config_entry.entry_id}_slots")
         self.hass.async_create_task(repair())
+
+    @staticmethod
+    def _fingerprint_keys(raw: dict[str, Any]) -> list[str]:
+        return sorted(f"{t['Pin']}:{t['FingerID']}" for t in raw["templates"])
+
+    @callback
+    def _check_lost_fingerprints(self, raw: dict[str, Any], known_users: Optional[list[int]]) -> None:
+        """Alert when fingerprints or UserIDs disappear without an operation of the
+        integration (keypad, other software, device fault): they can be restored from a
+        backup taken before."""
+        if (self.identify is not None or self.store.data.get("identify_pending")
+                or self.manager.journal.exists()):
+            return  # an operation is under way: compared once it is settled
+        current = self._fingerprint_keys(raw)
+        known = self.store.data.get("known_fingerprints")
+        self.store.data["known_fingerprints"] = current
+        lost = sorted(set(known or []) - set(current), key=lambda k: tuple(map(int, k.split(":"))))
+        gone_users = sorted(set(known_users or []) - {u["Pin"] for u in raw["users"]})
+        if known is None or not (lost or gone_users):
+            return
+        _LOGGER.warning("Fingerprints %s / UserIDs %s disappeared from the device without an operation "
+                        "of Home Assistant", lost, gone_users)
+        items = [f"UserID {k.split(':')[0]}, finger slot {k.split(':')[1]}" for k in lost]
+        items += [f"UserID {u} (whole user)" for u in gone_users]
+        persistent_notification.async_create(
+            self.hass,
+            "These disappeared from the device without an operation of Home Assistant (deleted on the "
+            "keypad, by other software, or a device fault):\n- " + "\n- ".join(items) +
+            f"\n\nIf this was not intended, restore them from a backup in the "
+            f"[access control panel](/{PANEL_URL}) (Settings, Backups, \u201cMerge\u201d).",
+            title=f"{self.config_entry.title}: fingerprints disappeared",
+            notification_id=f"{DOMAIN}_{self.config_entry.entry_id}_lost")
+
+    # --------------------------------------------------------------- journal
+    def _journal_due(self) -> bool:
+        """A journal is on disk while no operation runs: an operation was interrupted
+        (restart, lost connection, frozen device) and its UserIDs must be checked."""
+        return (self.manager.journal.exists() and not self._journal_recovering
+                and self.identify is None and not self.store.data.get("identify_pending")
+                and not self._identify_restoring and not self._identify_isolating
+                and time.monotonic() >= self._journal_retry_at)
+
+    async def _async_journal_recover(self) -> None:
+        self._journal_recovering = True
+        notification_id = f"{DOMAIN}_{self.config_entry.entry_id}_journal"
+        try:
+            op = await self.async_run(lambda: self.manager.journal.recover(self.client), background=True)
+        except HomeAssistantError as ex:
+            self._journal_retry_at = time.monotonic() + 60
+            _LOGGER.error("An interrupted fingerprint operation could not be settled yet (retried in 60 s): %s", ex)
+            persistent_notification.async_create(
+                self.hass,
+                "A fingerprint operation was interrupted and the fingerprints concerned could not be "
+                f"checked or put back yet ({ex}). Home Assistant retries every minute; the state before "
+                f"the operation is kept on disk (`{self.manager.journal.path}`). Nothing else is done "
+                "on the device meanwhile.",
+                title=f"{self.config_entry.title}: fingerprints to check", notification_id=notification_id)
+            return
+        finally:
+            self._journal_recovering = False
+        persistent_notification.async_dismiss(self.hass, notification_id)
+        if op:
+            persistent_notification.async_create(
+                self.hass,
+                f"The operation \u201c{op}\u201d was interrupted. Its fingerprints were checked and put "
+                "back exactly as they were before it: do it again if needed.",
+                title=f"{self.config_entry.title}: fingerprints put back",
+                notification_id=f"{notification_id}_done")
 
     def _notify_new_user(self, user_id: int) -> None:
         persistent_notification.async_create(
@@ -461,7 +537,9 @@ class ZKCoordinator(IdentifyMixin, PhoneMixin, MaintenanceMixin, DataUpdateCoord
                                      translation_placeholders={"host": self.client.host, "error": str(ex)}) from ex
         self._snapshot_at = time.monotonic()
         if silent:
+            # Changes made by the integration itself: the new baseline, no alert.
             self.store.data["known_user_ids"] = sorted({u["Pin"] for u in raw["users"]})
+            self.store.data["known_fingerprints"] = self._fingerprint_keys(raw)
         self._apply_raw(raw, force=True)
 
     @callback
@@ -478,8 +556,8 @@ class ZKCoordinator(IdentifyMixin, PhoneMixin, MaintenanceMixin, DataUpdateCoord
         return []
 
     async def async_backup(self, reason: str) -> Optional[str]:
-        if self.store.data.get("identify_pending"):
-            _LOGGER.debug("Backup skipped: fingerprints are isolated for an identification")
+        if self.store.data.get("identify_pending") or self.manager.journal.exists():
+            _LOGGER.debug("Backup skipped: a fingerprint operation is not settled")
             return None
         try:
             return await self.async_run(self.manager.backup_create, reason, refresh=False, background=True)

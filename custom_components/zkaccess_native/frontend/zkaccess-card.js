@@ -7,6 +7,19 @@
 //   filter: all                # all | open | actions | denied
 //   person: 12                 # optional: only this person number
 //   device: <config entry id>  # optional: when several devices are set up
+// Date/time options following the user's Home Assistant profile: 12/24 h (time_format
+// "language" / "system" / "12" / "24", same rule as the HA frontend) and time zone ("server" =
+// the HA server's zone, "local" = the browser's).
+const haTimeOpts = (hass) => {
+  const loc = hass?.locale || {};
+  const lang = loc.language || hass?.language || undefined;
+  let hour12;
+  if (loc.time_format === "12" || loc.time_format === "24") hour12 = loc.time_format === "12";
+  else hour12 = new Date(2023, 0, 1, 22).toLocaleString(loc.time_format === "system" ? undefined : lang).includes("10");
+  const opts = { hour12 };
+  if (loc.time_zone === "server" && hass?.config?.time_zone) opts.timeZone = hass.config.time_zone;
+  return [lang, opts];
+};
 const DOMAIN = "zkaccess_native";
 
 const TEXTS = {
@@ -111,8 +124,9 @@ class ZkAccessActivityCard extends HTMLElement {
   fmtTime(iso) {
     if (!iso) return "";
     const d = new Date(iso);
-    return isNaN(d) ? iso : d.toLocaleString(this._hass.locale?.language || undefined,
-      { weekday: "short", hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" });
+    const [lang, o] = haTimeOpts(this._hass);
+    return isNaN(d) ? iso : d.toLocaleString(lang,
+      { ...o, weekday: "short", hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" });
   }
 
   render() {

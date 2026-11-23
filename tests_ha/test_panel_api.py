@@ -245,8 +245,18 @@ async def test_identify_finger(hass: HomeAssistant, emulator, setup):
     assert (await call("identify/start", person=12, physical=3))["state"] == "waiting"
     emulator.state.push_event(14, user_id=128)
     await poll(hass, entry)
-    assert notices[-1]["state"] == "found" and notices[-1]["user_id"] == 128 and notices[-1]["placed"]
+    found = notices[-1]
+    assert found["state"] == "found" and found["user_id"] == 128 and found["found_person"] == 12
+    # Nothing is placed before confirmation; the current assignment and category are given.
+    assert found["current_physical"] is None and found["digit"] == 8
+    assert fingers(await call("state"), 128) == {0: None}
+    await call("finger/update", user_id=128, finger_id=0, physical=3)   # the panel's "Confirm"
     assert fingers(await call("state"), 128) == {0: 3}
+    # Identified again: the current finger is reported (the panel's default choice).
+    await call("identify/start", person=12)
+    emulator.state.push_event(14, user_id=128)
+    await poll(hass, entry)
+    assert notices[-1]["state"] == "found" and notices[-1]["current_physical"] == 3
 
     # Several fingerprints: each is isolated on a temporary UserID, then put back.
     before = templates()
@@ -277,7 +287,8 @@ async def test_identify_finger(hass: HomeAssistant, emulator, setup):
     assert notices[-1]["state"] == "found" and (notices[-1]["user_id"], notices[-1]["finger_id"]) == (120, 1)
     assert templates() == before
     assert "identify_pending" not in coord.store.data
-    assert fingers(await call("state", refresh=True), 120) == {0: None, 1: 6}
+    assert notices[-1]["current_physical"] is None
+    assert fingers(await call("state", refresh=True), 120) == {0: None, 1: None}
 
     # Cancelled while isolated: everything is put back.
     await call("identify/start", person=12)
@@ -315,6 +326,18 @@ async def test_identify_restored_after_restart(hass: HomeAssistant, emulator, se
     with ZKAccess("127.0.0.1", emulator.port) as dev:
         assert sorted((t.user_id, t.finger_id) for t in dev.get_templates()) == [(120, 0), (120, 2)]
         assert [u.user_id for u in dev.get_users() if u.user_id >= 9990] == []
+
+
+async def test_response_chart_data(hass: HomeAssistant, emulator, setup):
+    """The panel's response time chart: sensor entity (read from the recorder), threshold, reboots."""
+    entry, call = setup
+    state = await call("state")
+    assert state["response_entity"].startswith("sensor.") and state["slow_threshold"] == 0.5
+    assert state["restart_history"] == []
+    await call("device/restart")
+    entry.runtime_data._boot_until = None
+    state = await call("state")
+    assert [r["reason"] for r in state["restart_history"]] == ["panel"]
 
 
 async def test_poll_interval_setting(hass: HomeAssistant, emulator, setup):
@@ -435,7 +458,8 @@ async def test_identify_exchanges_are_few(hass: HomeAssistant, emulator, setup):
     _, hide_n = await hass.async_add_executor_job(run, coord.manager.identify_hide, 120)
     _, restore_n = await hass.async_add_executor_job(run, coord.manager.identify_restore, 120, mapping, templates, slot)
     coord.client._exchange = original
-    assert (copy_n, hide_n, restore_n) == (3 + 2 * 4, 1, 2 + 3 * 4)
+    # + 3 exchanges for the journal on each side (users, templates with data, rights).
+    assert (copy_n, hide_n, restore_n) == (3 + 3 + 2 * 4, 1, 2 + 3 * 4 + 3)
     with ZKAccess("127.0.0.1", emulator.port) as dev:
         assert sorted((t.finger_id, t.template[:1]) for t in dev.get_templates(120)) == [
             (0, b"A"), (1, b"B"), (2, b"C"), (3, b"D")]
