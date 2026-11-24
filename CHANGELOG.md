@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.3 - 2026-11-24
 
 - Home Assistant integration: **two cards per category** (category numbering). The device
   keeps one card number per UserID, so card 2 is stored on UserID 9000 + the category's UserID
