@@ -9,11 +9,15 @@ from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import issue_registry as ir
+from homeassistant.helpers.service import async_register_admin_service
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.loader import async_get_integration
 from pyzkaccess_native import User
 
 from . import websocket
+
+#: Actions that create, change or list the device users: administrators only.
+ADMIN_SERVICES = ("set_user", "delete_user", "grant", "revoke", "list_users")
 from .const import DOMAIN
 from .coordinator import ZKCoordinator
 from .panel import async_register_panel, async_unregister_panel
@@ -118,9 +122,12 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
     for name, schema in SCHEMAS.items():
         returns = name in ("set_user", "list_users", "backup")
-        hass.services.async_register(DOMAIN, name, handle, schema=schema,
-                                     supports_response=SupportsResponse.OPTIONAL if returns
-                                     else SupportsResponse.NONE)
+        response = SupportsResponse.OPTIONAL if returns else SupportsResponse.NONE
+        if name in ADMIN_SERVICES:
+            # Raw device management (users, rights, card numbers): administrators only.
+            async_register_admin_service(hass, DOMAIN, name, handle, schema, response)
+        else:
+            hass.services.async_register(DOMAIN, name, handle, schema=schema, supports_response=response)
     return True
 
 
@@ -128,6 +135,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ZKConfigEntry) -> bool:
     store = AccessStore(hass, entry.entry_id)
     await store.async_load()
     coordinator = ZKCoordinator(hass, entry, store)
+    # Known once from disk here; kept in memory afterwards (checked on every poll).
+    await hass.async_add_executor_job(coordinator.manager.journal.refresh_state)
     await coordinator.async_config_entry_first_refresh()
     entry.runtime_data = coordinator
     await coordinator.async_setup_schedules()

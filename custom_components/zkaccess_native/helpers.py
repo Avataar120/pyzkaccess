@@ -49,3 +49,14 @@ class ZKData:
     status: Optional[DoorStatus] = None
     events: list[dict[str, Any]] = field(default_factory=list)
     snapshot: Optional[dict[str, Any]] = None
+
+
+#: Fields of an access event that are credentials (card numbers): kept in the integration's
+#: own history for administrators (the panel), never put on the event bus, in entity
+#: attributes (recorder) or sent to other users. ``card_known`` tells automations enough.
+PRIVATE_EVENT_FIELDS = ("card",)
+
+
+def public_event(ev: dict[str, Any]) -> dict[str, Any]:
+    """An access event without its credential fields."""
+    return {k: v for k, v in ev.items() if k not in PRIVATE_EVENT_FIELDS}

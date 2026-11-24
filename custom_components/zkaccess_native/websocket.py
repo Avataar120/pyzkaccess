@@ -13,6 +13,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from .const import (CONF_POLL_INTERVAL, DEFAULT_SECOND_WINDOW, DOMAIN, NUMBERING_CATEGORY, NUMBERING_PLAIN,
                     POLL_INTERVAL_MAX, POLL_INTERVAL_MIN, SLOW_THRESHOLD_SECONDS)
 from .coordinator import ZKCoordinator, poll_interval, signal_changed, signal_event
+from .helpers import public_event
 from .panel import async_rename_panel
 
 ENTRY = vol.Required("entry_id")
@@ -108,7 +109,11 @@ async def ws_state(hass: HomeAssistant, connection, msg) -> None:
 @callback
 def ws_history(hass: HomeAssistant, connection, msg) -> None:
     coord = _coordinator(hass, msg["entry_id"])
-    _reply(connection, msg, list(reversed(coord.store.data["history"][-msg["limit"]:])))
+    history = list(reversed(coord.store.data["history"][-msg["limit"]:]))
+    # Card numbers only for administrators (the panel); the activity card works without them.
+    if not connection.user.is_admin:
+        history = [public_event(ev) for ev in history]
+    _reply(connection, msg, history)
 
 
 @websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/subscribe", ENTRY: str})
@@ -120,6 +125,8 @@ def ws_subscribe(hass: HomeAssistant, connection, msg) -> None:
 
     @callback
     def on_event(ev: dict) -> None:
+        if not connection.user.is_admin:
+            ev = public_event(ev)
         connection.send_message(websocket_api.event_message(msg["id"], {"kind": "event", "event": ev}))
 
     @callback

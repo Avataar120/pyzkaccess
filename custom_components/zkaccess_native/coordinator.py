@@ -29,7 +29,7 @@ from .const import (CONF_POLL_INTERVAL, CONF_SYNC_CLOCK, DEFAULT_SECOND_WINDOW, 
                     SNAPSHOT_REFRESH_SECONDS, TOGGLE_INACTIVE_STATES)
 # signal_* and poll_interval are re-exported: other modules import them from here.
 from .helpers import (UNKNOWN_CREDENTIAL, ZKData, access_method, poll_interval,  # noqa: F401
-                      signal_changed, signal_event)
+                      public_event, signal_changed, signal_event)
 from .identify import IdentifyMixin
 from .maintenance import MaintenanceMixin
 from .manager import AccessManager
@@ -467,6 +467,8 @@ class ZKCoordinator(IdentifyMixin, PhoneMixin, MaintenanceMixin, DataUpdateCoord
             "toggle": toggled,
             "method": method,
             "card": card,
+            # For automations: a card the device knows (the number itself stays private).
+            "card_known": bool(user_id) if method == "card" else None,
             "phone": phone,
             "door": door,
             "verify_mode": verify_mode,
@@ -476,7 +478,8 @@ class ZKCoordinator(IdentifyMixin, PhoneMixin, MaintenanceMixin, DataUpdateCoord
     @callback
     def _publish(self, events: list[dict[str, Any]]) -> None:
         for ev in events:
-            self.hass.bus.async_fire(EVENT_ACCESS, ev)
+            # Any user (and the recorder) can read the bus: no card number there.
+            self.hass.bus.async_fire(EVENT_ACCESS, public_event(ev))
             self.store.add_history(ev)
             async_dispatcher_send(self.hass, signal_event(self.config_entry.entry_id), ev)
         if events:

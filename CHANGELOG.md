@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- Home Assistant integration, security: card numbers are no longer in the
+  `zkaccess_native_access` event, in the attributes of the event entity (recorder history) nor
+  in the activity sent to users who are not administrators; a new `card_known` field tells
+  automations whether the card is known. The logbook says "Unknown card" instead of its number.
+- Home Assistant integration, security: the raw actions `set_user`, `delete_user`, `grant`,
+  `revoke` and `list_users` are reserved to administrators.
+- Home Assistant integration: the check for a pending fingerprint journal no longer touches the
+  disk on the event loop at every poll (state kept in memory, read once at setup).
+- README: installation from the HACS search first.
+
 ## 0.6.1 - 2026-11-23
 
 - Home Assistant integration, panel and activity card: dates and times follow the user's Home

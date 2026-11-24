@@ -138,7 +138,7 @@ class ZkAccessActivityCard extends HTMLElement {
     const rows = items.map((h) => {
       const [bg, fg, icon] = STYLE[h.result] || STYLE.other;
       const who = h.person_name || (h.user_id ? (h.person ? this.t("person_no", { n: h.person }) : this.t("unknown_user", { u: h.user_id }))
-        : h.card ? this.t("unknown_card") : this.eventName(h.event_name));
+        : (h.card || h.method === "card") ? this.t("unknown_card") : this.eventName(h.event_name));
       const parts = [h.category, h.method ? this.t("method_" + h.method) : null, h.phone, h.card && !h.person ? `#${h.card}` : null,
         h.gesture === "double" ? this.t("second_presentation") : null,
         (h.result === "denied" || h.result === "other") && this.eventName(h.event_name) !== who ? this.eventName(h.event_name) : null].filter(Boolean);

@@ -126,7 +126,7 @@ def test_logbook_texts(hass: HomeAssistant):
         hass.config.language = lang
         logbook.async_describe_events(hass, lambda domain, event_type, fn: seen.__setitem__(lang, fn))
     card = {"result": "granted", "person_name": "Alice", "category": "Open", "method": "card", "gesture": "double"}
-    denied = {"result": "denied", "card": 42, "method": "card", "event_name": "Unregistered card"}
+    denied = {"result": "denied", "card_known": False, "method": "card", "event_name": "Unregistered card"}
     assert seen["en"](Event(EVENT_ACCESS, card)) == {"name": "Alice", "message": "Open (card), second presentation"}
     assert seen["fr"](Event(EVENT_ACCESS, card)) == {"name": "Alice", "message": "Open (carte), deuxième présentation"}
-    assert seen["fr"](Event(EVENT_ACCESS, denied)) == {"name": "Carte n°42", "message": "refusé : carte inconnue"}
+    assert seen["fr"](Event(EVENT_ACCESS, denied)) == {"name": "Carte inconnue", "message": "refusé : carte inconnue"}

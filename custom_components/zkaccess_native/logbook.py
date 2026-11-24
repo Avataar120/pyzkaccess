@@ -8,10 +8,10 @@ from .const import DOMAIN, EVENT_ACCESS
 TEXTS = {
     "en": {"fingerprint": "fingerprint", "card": "card", "code": "keypad code", "remote": "remote",
            "phone": "phone", "second": "second presentation", "denied": "denied",
-           "card_no": "Card #{n}", "user_id": "UserID {n}", "device": "Access control"},
+           "unknown_card": "Unknown card", "user_id": "UserID {n}", "device": "Access control"},
     "fr": {"fingerprint": "doigt", "card": "carte", "code": "code clavier", "remote": "à distance",
            "phone": "téléphone", "second": "deuxième présentation", "denied": "refusé",
-           "card_no": "Carte n°{n}", "user_id": "UserID {n}", "device": "Contrôle d'accès"},
+           "unknown_card": "Carte inconnue", "user_id": "UserID {n}", "device": "Contrôle d'accès"},
 }
 #: Device event names (as reported by the library) shown for refusals, in French.
 EVENT_NAMES_FR = {
@@ -36,7 +36,7 @@ def async_describe_events(hass: HomeAssistant, async_describe_event) -> None:
         d = event.data
         who = d.get("person_name") or (txt["user_id"].format(n=d["user_id"]) if d.get("user_id") else None)
         if not who:
-            who = txt["card_no"].format(n=d["card"]) if d.get("card") else txt["device"]
+            who = txt["unknown_card"] if d.get("method") == "card" else txt["device"]
         method = txt.get(d.get("method") or "", d.get("method") or "")
         event_name = (d.get("event_name") or "").lower()
         if lang == "fr":

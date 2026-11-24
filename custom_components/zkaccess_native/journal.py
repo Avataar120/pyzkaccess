@@ -152,9 +152,21 @@ class Journal:
 
     def __init__(self, path: Path) -> None:
         self.path = path
+        #: whether the file is on disk, kept in memory (only this object writes or removes
+        #: it) so that the checks made on the event loop never touch the file system
+        self._present: Optional[bool] = None
+
+    def refresh_state(self) -> bool:
+        """Read from disk whether a journal is there (blocking: run it in the executor,
+        once at setup)."""
+        self._present = self.path.exists()
+        return self._present
 
     def exists(self) -> bool:
-        return self.path.exists()
+        """Whether a journal is on disk (from memory, no file system access once known)."""
+        if self._present is None:
+            return self.refresh_state()
+        return self._present
 
     def load(self) -> dict[str, Any]:
         data = json.loads(self.path.read_text(encoding="utf-8"))
@@ -175,6 +187,7 @@ class Journal:
             f.flush()
             os.fsync(f.fileno())
         os.replace(tmp, self.path)
+        self._present = True
         dir_fd = os.open(self.path.parent, os.O_RDONLY)
         try:
             os.fsync(dir_fd)
@@ -183,6 +196,7 @@ class Journal:
 
     def clear(self) -> None:
         self.path.unlink(missing_ok=True)
+        self._present = False
 
     # ------------------------------------------------------------ operations
     def begin(self, client: ZKAccess, op: str, user_ids: Iterable[int], strict: bool = True) -> State:

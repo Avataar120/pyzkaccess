@@ -329,11 +329,14 @@ cards and codes without any YAML.
 
 ### Install
 
-**With HACS** (no need to wait for the default HACS list):
+**With HACS** (recommended):
 
-1. HACS → ⋮ → **Custom repositories** → add `https://github.com/Avataar120/pyzkaccess`,
-   type **Integration**.
-2. Install **ZKAccess Native** and restart Home Assistant.
+1. In HACS, search for **ZKAccess Native**, open it and click **Download**.
+2. Restart Home Assistant.
+
+If it does not show up in the search yet (before it is in the default HACS list): HACS → ⋮ →
+**Custom repositories** → add `https://github.com/Avataar120/pyzkaccess`, type
+**Integration**, then install **ZKAccess Native** as above.
 
 **By hand** (without HACS):
 
@@ -534,7 +537,13 @@ Every access event is also fired on the bus as **`zkaccess_native_access`** with
 | `method` | `fingerprint` | `fingerprint`, `card`, `code`, `phone`, `remote`, `other` |
 | `toggle` | `true` | the category was chosen by a toggle |
 | `phone` | `Pixel 9` | name of the phone (phone access only) |
-| `user_id`, `card`, `door`, `event`, `event_name`, `time`, `device_id` | | raw details |
+| `card_known` | `true` | card accesses only: the device knows the card (`false` = unknown card) |
+| `user_id`, `door`, `event`, `event_name`, `time`, `device_id` | | raw details |
+
+Card numbers are access credentials: they are **not** in this event, nor in the attributes of
+the event entity (so not in the recorder history), nor sent to users who are not
+administrators. Only the **Access control** page (administrators) shows them, for instance to
+assign an unknown card that was just presented.
 
 Actions:
 
@@ -542,6 +551,8 @@ Actions:
   person, or one of their categories; `rename_person`; `open_door`; `sync_clock`; `backup`.
 - Advanced, on raw UserIDs outside the person / category model: `set_user`, `delete_user`,
   `grant`, `revoke`, `list_users` (returns the users). Prefer the panel or `set_access`.
+  These five actions are **reserved to administrators** (they create users on the door
+  controller and give them access); the others can be used by any user.
 
 The door sensor and its alarm are disabled by default when the device reports no door
 contact wired; enable them in the entity settings if you wire one later.

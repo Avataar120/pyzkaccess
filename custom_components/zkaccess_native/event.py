@@ -8,6 +8,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from . import ZKConfigEntry
 from .const import RESULT_ACTION, RESULT_DENIED, RESULT_GRANTED, RESULT_OTHER
 from .entity import ZKEntity
+from .helpers import PRIVATE_EVENT_FIELDS
 
 # Entities pushed by the coordinator (device access is serialized by the coordinator anyway).
 PARALLEL_UPDATES = 0
@@ -33,6 +34,6 @@ class ZKAccessEvent(ZKEntity, EventEntity):
         if not data or not data.events:
             return
         for ev in data.events:
-            attrs = {k: v for k, v in ev.items() if k not in ("device_id", "result")}
+            attrs = {k: v for k, v in ev.items() if k not in ("device_id", "result", *PRIVATE_EVENT_FIELDS)}
             self._trigger_event(ev["result"], attrs)
             self.async_write_ha_state()
