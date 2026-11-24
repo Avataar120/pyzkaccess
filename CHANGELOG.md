@@ -9,6 +9,10 @@
   panel shows Card 1 / Card 2 per category, and "Learn a card" lets you choose the slot (first
   free one by default). Not available for person 99 (9990-9999 are the identification's
   temporary UserIDs).
+- Home Assistant integration, finger identification: the panel no longer redraws the hands
+  while the fingerprints are isolated on the temporary UserIDs (they showed as empty); the view
+  is re-read once everything is back in place. A finger of another person is refused at the
+  first reading, without isolating its fingerprints and asking for it again.
 
 ## 0.6.2 - 2026-11-24
 

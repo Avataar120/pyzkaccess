@@ -129,7 +129,7 @@ const I18N = {
     identify_other: "That was not the same finger: place the finger from the first step again.",
     identify_restoring: "Putting the fingerprints back…",
     identify_found: "Fingerprint found", identify_found_of: "{name} · UserID {u} · slot {s}",
-    identify_wrong_person: "This finger belongs to {name} ({finger}). Identification stopped.", identify_current: "Current finger: <b style=\"font-weight:500\">{finger}</b>", finger_unassigned: "not assigned", identify_category: "Category: <b style=\"font-weight:500\">{c}</b>",
+    identify_wrong_person: "This finger belongs to {name} ({finger}). Identification stopped.", identify_wrong_person_any: "This finger belongs to {name}. Identification stopped.", identify_current: "Current finger: <b style=\"font-weight:500\">{finger}</b>", finger_unassigned: "not assigned", identify_category: "Category: <b style=\"font-weight:500\">{c}</b>",
     identify_next: "Identify another finger", identify_timeout: "No finger within 60 s.", identify_cancelled: "Identification cancelled.",
     identify_error: "Identification failed: {e}",
   },
@@ -247,7 +247,7 @@ const I18N = {
     identify_other: "Ce n'est pas le même doigt : reposez le doigt de la première étape.",
     identify_restoring: "Remise en place des empreintes…",
     identify_found: "Empreinte trouvée", identify_found_of: "{name} · UserID {u} · emplacement {s}",
-    identify_wrong_person: "Ce doigt appartient à {name} ({finger}). Identification arrêtée.", identify_current: "Doigt actuel : <b style=\"font-weight:500\">{finger}</b>", finger_unassigned: "non attribué", identify_category: "Catégorie : <b style=\"font-weight:500\">{c}</b>",
+    identify_wrong_person: "Ce doigt appartient à {name} ({finger}). Identification arrêtée.", identify_wrong_person_any: "Ce doigt appartient à {name}. Identification arrêtée.", identify_current: "Doigt actuel : <b style=\"font-weight:500\">{finger}</b>", finger_unassigned: "non attribué", identify_category: "Catégorie : <b style=\"font-weight:500\">{c}</b>",
     identify_next: "Identifier un autre doigt", identify_timeout: "Aucun doigt en 60 s.", identify_cancelled: "Identification annulée.",
     identify_error: "Échec de l'identification : {e}",
   },
@@ -1050,7 +1050,9 @@ class ZkAccessPanel extends HTMLElement {
         const current = r.current_physical != null ? this.fingerName(r.current_physical) : this.t("finger_unassigned");
         // 1) The finger must belong to the person being edited: otherwise say whose it is and stop.
         if (m.person != null && r.found_person !== m.person) {
-          body = warn(esc(this.t("identify_wrong_person", { finger: current.toLowerCase(), name })));
+          // finger_id null: refused at the first reading, before telling the fingers apart.
+          body = warn(esc(r.finger_id == null ? this.t("identify_wrong_person_any", { name })
+            : this.t("identify_wrong_person", { finger: current.toLowerCase(), name })));
           actions = `<button class="btn" data-act="identify-start" data-i="${m.physical ?? ""}">${this.t("identify_next")}</button>
             <button class="btn primary" data-act="close-modal">${this.t("close")}</button>`;
           break;

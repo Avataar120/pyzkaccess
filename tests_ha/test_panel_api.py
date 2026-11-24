@@ -272,6 +272,10 @@ async def test_identify_finger(hass: HomeAssistant, emulator, setup):
     state = await call("state", refresh=True)       # temporary UserIDs stay hidden
     assert all(c["user_id"] < 9990 for p in state["snapshot"]["persons"] for c in p["categories"])
     assert state["snapshot"]["unassigned"] == []
+    # The view is frozen meanwhile: the isolated fingerprints are still shown on their UserID.
+    assert fingers(state, 120) == {0: None, 1: None}
+    await poll(hass, entry)
+    assert fingers(await call("state"), 120) == {0: None, 1: None}
     # Readings that do not conclude (copy not matched yet, former owner, one other UserID)
     # ask again instead of reporting another finger; the same other UserID twice does.
     for uid, event in ((0, 34), (120, 14), (128, 14)):
@@ -298,6 +302,18 @@ async def test_identify_finger(hass: HomeAssistant, emulator, setup):
     assert templates() != before
     await call("identify/cancel")
     assert templates() == before and "identify_pending" not in coord.store.data
+
+    # Another person's finger with several fingerprints: refused at the first reading,
+    # nothing isolated on the device.
+    await call("person/save", person=13, name="Carol")
+    await call("identify/start", person=13)
+    emulator.state.push_event(14, user_id=120)
+    await poll(hass, entry)
+    await hass.async_block_till_done()
+    assert notices[-1]["state"] == "found" and notices[-1]["found_person"] == 12
+    assert notices[-1]["finger_id"] is None and notices[-1]["user_id"] == 120
+    assert templates() == before and "identify_pending" not in coord.store.data
+    assert coord.identify is None
 
     # Identification never reaches the automations; normal events do again afterwards.
     assert events == []

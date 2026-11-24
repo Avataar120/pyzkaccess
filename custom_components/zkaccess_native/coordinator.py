@@ -205,10 +205,20 @@ class ZKCoordinator(IdentifyMixin, PhoneMixin, MaintenanceMixin, DataUpdateCoord
             return time.monotonic() < until
         return False
 
+    def _identify_busy(self) -> bool:
+        """An identification is running or its fingerprints are not all back in place."""
+        return bool(self.identify is not None or self.store.data.get("identify_pending")
+                    or self._identify_isolating or self._identify_restoring)
+
     @callback
     def _apply_raw(self, raw: dict[str, Any], force: bool = False) -> None:
         """Rebuild the snapshot when the device content changed (or when ``force``:
         integration-side data such as categories or physical fingers changed)."""
+        if raw is not self._last_raw and self._identify_busy():
+            # During an identification the fingerprints of the UserID being isolated sit on
+            # hidden temporary UserIDs: the device content is transient. Keep the view from
+            # before (re-read once everything is back in place).
+            return
         self._last_raw = raw
         self._check_template_slots(raw)
         digest = self.manager.fingerprint(raw)
@@ -543,6 +553,8 @@ class ZKCoordinator(IdentifyMixin, PhoneMixin, MaintenanceMixin, DataUpdateCoord
         except (ZKError, OSError) as ex:
             raise HomeAssistantError(translation_domain=DOMAIN, translation_key="unreachable",
                                      translation_placeholders={"host": self.client.host, "error": str(ex)}) from ex
+        if self._identify_busy():
+            return  # transient content (see _apply_raw): read again after the identification
         self._snapshot_at = time.monotonic()
         if silent:
             # Changes made by the integration itself: the new baseline, no alert.

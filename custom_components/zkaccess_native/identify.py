@@ -86,6 +86,12 @@ class IdentifyMixin:
         if len(fingers) == 1:
             self._identify_found(uid, fingers[0])
             return
+        who = self._user_index.get(uid) or {}
+        if idf.get("person") is not None and who.get("person") != idf["person"]:
+            # Another person's finger: known from the UserID already, no need to isolate its
+            # fingerprints (and ask for the finger again) to tell which one it is.
+            self._identify_found(uid, None)
+            return
         idf.update(state="isolating", step=2, user_id=uid)
         self._identify_notify()
         self.hass.async_create_task(self._async_identify_isolate(idf, uid))
@@ -154,7 +160,7 @@ class IdentifyMixin:
         return True
 
     @callback
-    def _identify_found(self, user_id: int, finger_id: int) -> None:
+    def _identify_found(self, user_id: int, finger_id: Optional[int]) -> None:
         # Nothing is placed here: the panel shows the current assignment (physical finger and
         # category), refuses a finger of another person, and records the choice on confirmation.
         idf = self.identify or {}
@@ -163,7 +169,7 @@ class IdentifyMixin:
         category = self.store.category(digit) if digit is not None else None
         result = {**idf, "state": "found", "user_id": user_id, "finger_id": finger_id,
                   "found_person": who.get("person"), "found_name": who.get("person_name"),
-                  "current_physical": self.store.physical_finger(user_id, finger_id),
+                  "current_physical": None if finger_id is None else self.store.physical_finger(user_id, finger_id),
                   "digit": digit, "category_name": (category or {}).get("name")}
         self.identify = None
         self.async_rebuild()
