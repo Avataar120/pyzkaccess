@@ -22,7 +22,7 @@ from pyzkaccess_native import (CategoryScheme, DoorSettings, SafetyError, Templa
                                ZKAccess)
 from pyzkaccess_native import backup as zk_backup
 
-from .const import CATEGORY_TYPES, IDENTIFY_PINS, NUMBERING_PLAIN
+from .const import CARDS_PER_CATEGORY, CATEGORY_TYPES, EXTRA_CARD_BASE, IDENTIFY_PINS, NUMBERING_PLAIN
 from .journal import Journal, JournalError, State
 from .store import AccessStore
 
@@ -53,9 +53,35 @@ class Numbering:
         return self._scheme.user_id(person, category)
 
     def split(self, user_id: int) -> tuple[int, int] | None:
+        """``(person, category)`` of a UserID, extra card UserIDs included."""
         if self.plain:
             return (user_id, 0) if user_id > 0 else None
-        return self._scheme.split(user_id)
+        return self._scheme.split(self.base(user_id))
+
+    @property
+    def max_cards(self) -> int:
+        return 1 if self.plain else CARDS_PER_CATEGORY
+
+    def card_user_id(self, person: int, category: int, slot: int) -> int | None:
+        """UserID holding card ``slot`` (0 = the category's own UserID) of (person, category);
+        ``None`` when that slot does not exist (person 99: 9990-9999 are reserved)."""
+        user_id = self.user_id(person, category)
+        if not slot:
+            return user_id
+        if slot >= self.max_cards or EXTRA_CARD_BASE + user_id in IDENTIFY_PINS:
+            return None
+        return EXTRA_CARD_BASE + user_id
+
+    def card_slot(self, user_id: int) -> int:
+        """0 for a category's own UserID, n for the UserID of its card n + 1."""
+        if self.plain or user_id in IDENTIFY_PINS:
+            return 0
+        base = user_id - EXTRA_CARD_BASE
+        return 1 if 0 <= base < EXTRA_CARD_BASE and self._scheme.split(base) else 0
+
+    def base(self, user_id: int) -> int:
+        """The category's own UserID (itself, or the one an extra card UserID belongs to)."""
+        return user_id - EXTRA_CARD_BASE if self.card_slot(user_id) else user_id
 
 
 class AccessManager:
@@ -242,8 +268,16 @@ class AccessManager:
         authorized = {a["Pin"] for a in raw["auths"]}
         persons: dict[int, dict[str, Any]] = {}
         unassigned = []
+        extra_cards: dict[int, list[dict[str, Any]]] = {}
         for u in sorted(raw["users"], key=lambda r: r["Pin"]):
             uid = u["Pin"]
+            slot = numbering.card_slot(uid)
+            if slot:
+                # Extra card of a category: shown on the category, not as a UserID of its own.
+                extra_cards.setdefault(numbering.base(uid), []).append(
+                    {"slot": slot, "user_id": uid, "card": u.get("CardNo") or None,
+                     "authorized": uid in authorized})
+                continue
             fingers = [{"finger_id": t["FingerID"], "size": t.get("Size"),
                         "physical": self.store.physical_finger(uid, t["FingerID"])}
                        for t in sorted(templates.get(uid, []), key=lambda r: r["FingerID"])]
@@ -262,6 +296,9 @@ class AccessManager:
                                          "category": cat["name"] if cat else f"Category {digit}",
                                          "type": cat["type"] if cat else None})
         for num, person in persons.items():
+            for cat in person["categories"]:
+                cat["cards"] = [{"slot": 0, "user_id": cat["user_id"], "card": cat["card"],
+                                 "authorized": cat["authorized"]}] + extra_cards.pop(cat["user_id"], [])
             meta = self.store.data["persons"].get(str(num), {})
             person["phones"] = [{"device_id": dev, **{k: v for k, v in ph.items() if k != "person"}}
                                 for dev, ph in self.store.data["phones"].items() if ph["person"] == num]
@@ -269,10 +306,16 @@ class AccessManager:
             person["categories_off"] = list(self.store.data.get("categories_off", {}).get(str(num), []))
             person["ha_person"] = meta.get("ha_person")
             person["categories"].sort(key=lambda c: c["digit"])
+        for base, cards in extra_cards.items():
+            # Extra card UserID whose category UserID is gone: listed as not assigned.
+            for c in cards:
+                unassigned.append({"user_id": c["user_id"], "fingers": [], "card": c["card"], "has_code": False,
+                                   "authorized": c["authorized"], "name": f"card {c['slot'] + 1} of {base}"})
         return {
             "numbering": self.store.data["numbering"],
             "persons": [persons[k] for k in sorted(persons)],
-            "unassigned": unassigned,
+            "unassigned": sorted(unassigned, key=lambda u: u["user_id"]),
+            "max_cards": numbering.max_cards,
             "counts": {
                 "persons": len(persons),
                 "user_ids": len(raw["users"]),
@@ -409,9 +452,11 @@ class AccessManager:
             self.store.data["categories_off"][str(person)] = sorted(off)
         else:
             self.store.data["categories_off"].pop(str(person), None)
-        user_id = self.numbering.user_id(person, digit)
-        if not self.store.is_disabled(person) and self.client.get_user(user_id) is not None:
-            self.apply_rights(user_id, digit, person)
+        if not self.store.is_disabled(person):
+            for slot in range(self.numbering.max_cards):
+                user_id = self.numbering.card_user_id(person, digit, slot)
+                if user_id is not None and self.client.get_user(user_id) is not None:
+                    self.apply_rights(user_id, digit, person)
         self.store.save()
 
     # ---------------------------------------------------------------- fingers
@@ -486,15 +531,38 @@ class AccessManager:
 
     # ------------------------------------------------------------- credentials
     def credential_set(self, person: int, digit: int, card: int | None | str = "keep",
-                       code: str | None = "keep") -> int:
-        """Set or remove the card (``None`` removes) and/or the keypad code of a category."""
+                       code: str | None = "keep", slot: int | None = 0) -> int:
+        """Set or remove (``None``) card ``slot`` (0 = first card, ``None`` = first free one)
+        and/or the keypad code of a category. Card 1 and the code are on the category's
+        UserID; card 2 on its extra UserID (see ``EXTRA_CARD_BASE``), created and deleted
+        with the card. Returns the UserID written."""
+        numbering = self.numbering
+        main = numbering.user_id(person, digit)
+        if slot is None:
+            if card in ("keep", None):
+                raise SafetyError("a card slot is needed to remove a card")
+            users = {u.user_id: u for u in self.client.get_users()}
+            slots = {s: numbering.card_user_id(person, digit, s) for s in range(numbering.max_cards)}
+            free = [s for s, uid in slots.items()
+                    if uid is not None and not (users.get(uid) or User(user_id=0)).card_no]
+            if not free:
+                raise SafetyError("all cards of this category are used: remove or replace one")
+            slot = free[0]
+        target = numbering.card_user_id(person, digit, slot)
+        if target is None:
+            raise SafetyError(f"card {slot + 1} is not available for person {person}"
+                              + (f": UserID {EXTRA_CARD_BASE + main} is reserved for finger identification"
+                                 if slot == 1 and not numbering.plain else ""))
+        if slot and code != "keep":
+            raise SafetyError("the keypad code belongs to the category's own UserID (card 1)")
         if card != "keep" and card:
             owner = [u.user_id for u in self.client.get_users() if u.card_no == card]
-            if owner and owner != [self.numbering.user_id(person, digit)]:
+            if owner and owner != [target]:
                 raise SafetyError(f"card {card} is already used by UserID {owner[0]}")
         if code not in ("keep", None) and (not str(code).isdigit() or not 1 <= len(str(code)) <= 6):
             raise SafetyError("the keypad code must be 1 to 6 digits")
-        user_id = self.numbering.user_id(person, digit)
+        if slot:
+            return self._extra_card_set(person, digit, target, card)
         changes: dict[str, Any] = {}
         if card != "keep":
             changes["card_no"] = int(card) if card else 0
@@ -504,9 +572,30 @@ class AccessManager:
         def write() -> None:
             self.ensure_user(person, digit)
             if changes:
-                self.client.save_user(User(user_id=user_id, **changes))
-        self.journal.run(self.client, f"card/code of {user_id}", [user_id], write,
-                         lambda st, _r: self._created(st, user_id))
+                self.client.save_user(User(user_id=main, **changes))
+        self.journal.run(self.client, f"card/code of {main}", [main], write,
+                         lambda st, _r: self._created(st, main))
+        return main
+
+    def _extra_card_set(self, person: int, digit: int, user_id: int, card: int | None | str) -> int:
+        """Card on an extra UserID: created with the card (name and rights of the category),
+        deleted with it."""
+        if card == "keep":
+            return user_id
+        main = self.numbering.user_id(person, digit)
+        if not card:
+            if self.client.get_user(user_id) is not None:
+                self.client.delete_user(user_id)
+            return user_id
+
+        def write() -> None:
+            self.ensure_user(person, digit)
+            name = (self.client.get_user(main) or User(user_id=main)).name
+            existed = self.client.get_user(user_id) is not None
+            self.client.save_user(User(user_id=user_id, name=name, card_no=int(card)), merge=existed)
+            self.apply_rights(user_id, digit, person)
+        self.journal.run(self.client, f"card of {user_id}", [main, user_id], write,
+                         lambda st, _r: (self._created(st, main), self._created(st, user_id)))
         return user_id
 
     # -------------------------------------------------------------- unassigned

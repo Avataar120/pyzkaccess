@@ -33,7 +33,7 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: ZKConfi
         "poll_interval": coord.update_interval.total_seconds() if coord.update_interval else None,
         "counts": snapshot.get("counts"),
         "persons": [{"num": p["num"], "enabled": p["enabled"],
-                     "categories": [{"digit": c["digit"], "fingers": len(c["fingers"]), "card": bool(c["card"]),
+                     "categories": [{"digit": c["digit"], "fingers": len(c["fingers"]), "cards": sum(1 for k in c.get("cards", [c]) if k["card"]),
                                      "code": c["has_code"], "authorized": c["authorized"]} for c in p["categories"]],
                      "phones": len(p.get("phones", []))} for p in snapshot.get("persons", [])],
         "unassigned": len(snapshot.get("unassigned", [])),

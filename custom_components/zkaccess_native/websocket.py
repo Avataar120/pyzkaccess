@@ -194,7 +194,9 @@ async def ws_person_category_enable(hass, connection, msg) -> None:
 @websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/credential/set", ENTRY: str,
                                   vol.Required("person"): int, vol.Required("digit"): vol.All(int, vol.Range(0, 9)),
                                   vol.Optional("card"): vol.Any(None, vol.All(int, vol.Range(1, 4294967295))),
-                                  vol.Optional("code"): vol.Any(None, str)})
+                                  vol.Optional("code"): vol.Any(None, str),
+                                  # card slot: 0 = card 1, 1 = card 2, None = first free one
+                                  vol.Optional("slot", default=0): vol.Any(None, vol.All(int, vol.Range(0, 8)))})
 @websocket_api.require_admin
 @websocket_api.async_response
 async def ws_credential_set(hass, connection, msg) -> None:
@@ -202,7 +204,7 @@ async def ws_credential_set(hass, connection, msg) -> None:
     card = msg["card"] if "card" in msg else "keep"
     code = msg["code"] if "code" in msg else "keep"
     await _guard(connection, msg, coord.async_run(coord.manager.credential_set, msg["person"],
-                                                 msg["digit"], card, code))
+                                                 msg["digit"], card, code, msg["slot"]))
 
 
 # --------------------------------------------------------------------- fingers

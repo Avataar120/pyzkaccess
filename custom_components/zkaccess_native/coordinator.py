@@ -221,8 +221,10 @@ class ZKCoordinator(IdentifyMixin, PhoneMixin, MaintenanceMixin, DataUpdateCoord
         self._user_index = {}
         for person in self.snapshot["persons"]:
             for cat in person["categories"]:
-                self._user_index[cat["user_id"]] = {"person": person["num"], "person_name": person["name"],
-                                                    "digit": cat["digit"], "ha_person": person["ha_person"]}
+                who = {"person": person["num"], "person_name": person["name"],
+                       "digit": cat["digit"], "ha_person": person["ha_person"]}
+                for card in cat.get("cards") or [{"user_id": cat["user_id"]}]:
+                    self._user_index[card["user_id"]] = who
         user_ids = {u["Pin"] for u in raw["users"]}
         known = self.store.data.get("known_user_ids")
         if known is not None and self.store.data.get("notify_keypad", True):
@@ -417,7 +419,10 @@ class ZKCoordinator(IdentifyMixin, PhoneMixin, MaintenanceMixin, DataUpdateCoord
         cred = next((c for p in (self.snapshot or {}).get("persons", []) for c in p["categories"]
                      if c["user_id"] == ev.user_id), None)
         if cred is None:
-            return method
+            # An extra card UserID holds nothing but its card.
+            extra = any(card["user_id"] == ev.user_id for p in (self.snapshot or {}).get("persons", [])
+                        for c in p["categories"] for card in c.get("cards", [])[1:])
+            return "card" if extra else method
         kinds = [k for k, has in (("fingerprint", bool(cred["fingers"])), ("card", bool(cred["card"])),
                                   ("code", bool(cred["has_code"]))) if has]
         return kinds[0] if len(kinds) == 1 else method
@@ -555,7 +560,7 @@ class ZKCoordinator(IdentifyMixin, PhoneMixin, MaintenanceMixin, DataUpdateCoord
         """UserIDs of a person, from the last snapshot (no device access)."""
         for p in (self.snapshot or {}).get("persons", []):
             if p["num"] == person:
-                return [c["user_id"] for c in p["categories"]]
+                return [card["user_id"] for c in p["categories"] for card in c.get("cards") or [c]]
         return []
 
     async def async_backup(self, reason: str) -> Optional[str]:

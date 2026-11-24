@@ -26,6 +26,12 @@ IDENTIFY_STEP2_TIMEOUT_SECONDS = 90
 # Temporary UserIDs used to tell apart the fingers of one UserID during an identification:
 # each template gets its own UserID, without access rights. Hidden from the panel.
 IDENTIFY_PINS = range(9990, 10000)
+# The device keeps one card number per UserID. The second card of a category lives on an
+# extra UserID (category numbering only): 9000 + the category's UserID, e.g. 9100 = second
+# card of UserID 100. Same person, category and access rights. Not for person 99: 9990-9999
+# are the identification's temporary UserIDs.
+CARDS_PER_CATEGORY = 2
+EXTRA_CARD_BASE = 9000
 # The device reports a door opened for a phone as a remote opening within this delay.
 PHONE_ECHO_SECONDS = 10
 # Maintenance: the reader is rebooted every night (after the clock sync and backup), and when

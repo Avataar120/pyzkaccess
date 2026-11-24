@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- Home Assistant integration: **two cards per category** (category numbering). The device
+  keeps one card number per UserID, so card 2 is stored on UserID 9000 + the category's UserID
+  (9120 for 120), with the same name and access rights. It follows the person and category
+  switches, renaming and deletion; its events carry the person and category of card 1. The
+  panel shows Card 1 / Card 2 per category, and "Learn a card" lets you choose the slot (first
+  free one by default). Not available for person 99 (9990-9999 are the identification's
+  temporary UserIDs).
+
 ## 0.6.2 - 2026-11-24
 
 - Home Assistant integration, security: card numbers are no longer in the

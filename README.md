@@ -398,6 +398,13 @@ person 12 + category 3 (Arm)   -> UserID 123
   another one to close.
 - On the keypad, the code is typed after the UserID, so a person can reuse the same code in
   every category.
+- A category can hold **two cards** (two badges for the same person and action, e.g. a key fob
+  and a card in the wallet). The device keeps one card number per UserID, so the second card
+  is stored on an extra UserID: **9000 + the category's UserID** (9120 for 120). It gets the
+  same name and access rights, follows the person and category switches, and its events
+  carry the same person and category. It is shown under the category in the panel, not as a
+  UserID of its own. Person 99 has no second card (9990-9999 are reserved for finger
+  identification).
 - Each category says whether **the reader opens its lock** (its own relay). An "Arm" finger
   usually should not open the door: the device then refuses it (event 23 with the UserID,
   verified on the MA500; red LED as for a refusal), and the integration turns that refusal

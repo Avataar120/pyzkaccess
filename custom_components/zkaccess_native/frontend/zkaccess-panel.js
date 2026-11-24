@@ -36,7 +36,9 @@ const I18N = {
     categories_of: "Categories", user_id: "UserID", relay: "Reader opens its lock", relay_yes: "Yes", relay_no: "No (Home Assistant only)",
     relay_help: "“Reader opens its lock”: the reader itself releases the lock wired to it (event “granted”). Unchecked, the reader refuses on purpose and only Home Assistant reacts (event “action”). Automations work either way: react to both.",
     creds_title: "Cards and keypad codes",
-    creds_help: "One card and one code per category. On the keypad, the code is typed after the UserID, so the same code can be reused in every category.",
+    creds_help: "Up to {n} cards and one code per category. On the keypad, the code is typed after the UserID, so the same code can be reused in every category.",
+    creds_help_extra: "The device keeps one card per UserID: card 2 is stored on UserID 9000 + the category's UserID (e.g. 9100 for 100), with the same access rights.",
+    card_n: "Card {n}", card_slot: "Card slot", first_free: "First free slot", card_on_uid: "UserID {u}",
     replace: "Replace", remove: "Remove", set_code: "Set a code", change: "Change", code_set: "Set (••••)",
     identity: "Identity", name: "Name (stored in the device)", person_number: "Person number",
     ha_person: "Home Assistant person", no_ha_person: "— none —",
@@ -152,7 +154,9 @@ const I18N = {
     categories_of: "Catégories", user_id: "UserID", relay: "Le lecteur ouvre sa gâche", relay_yes: "Oui", relay_no: "Non (Home Assistant seulement)",
     relay_help: "« Le lecteur ouvre sa gâche » : le lecteur actionne lui-même la gâche câblée sur lui (événement « granted »). Décoché, il refuse volontairement et seul Home Assistant réagit (événement « action »). Les automations fonctionnent dans les deux cas : réagir aux deux.",
     creds_title: "Cartes et codes clavier",
-    creds_help: "Une carte et un code par catégorie. Au clavier, le code se tape après le UserID : le même code peut servir dans toutes les catégories.",
+    creds_help: "Jusqu'à {n} cartes et un code par catégorie. Au clavier, le code se tape après le UserID : le même code peut servir dans toutes les catégories.",
+    creds_help_extra: "Le lecteur ne garde qu'une carte par UserID : la carte 2 est enregistrée sur le UserID 9000 + celui de la catégorie (ex. 9100 pour 100), avec les mêmes droits.",
+    card_n: "Carte {n}", card_slot: "Emplacement", first_free: "Premier emplacement libre", card_on_uid: "UserID {u}",
     replace: "Remplacer", remove: "Retirer", set_code: "Définir un code", change: "Changer", code_set: "Défini (••••)",
     identity: "Identité", name: "Nom (enregistré dans le lecteur)", person_number: "Numéro de personne",
     ha_person: "Personne Home Assistant", no_ha_person: "— aucune —",
@@ -566,15 +570,17 @@ class ZkAccessPanel extends HTMLElement {
       }
       case "enroll-cancel": if (s.modal?.step === "wait") await this.ws("enroll/cancel").catch(() => {}); s.modal = null; await this.refresh(); return;
       case "learn-card": s.modal = { kind: "card", person: d.p ? Number(d.p) : (s.person ?? this.persons()[0]?.num ?? null),
-        digit: Number(d.d ?? 0), card: d.card ? Number(d.card) : null, cardInput: d.card || "" }; break;
+        digit: Number(d.d ?? 0), slot: d.s ?? "auto", card: d.card ? Number(d.card) : null, cardInput: d.card || "" }; break;
       case "card-save": {
         // The typed number wins; otherwise the card presented on the reader.
         const m = s.modal, typed = Number(this.val("card-no").replace(/\D/g, "")), card = typed || m.card || 0;
         if (!(card > 0)) { this.toast(this.t("card_missing"), true); return; }
-        await this.call("credential/set", { person: Number(this.val("card-person")), digit: Number(this.val("card-digit")), card }, this.t("saved"));
+        const slot = this.val("card-slot");
+        await this.call("credential/set", { person: Number(this.val("card-person")), digit: Number(this.val("card-digit")), card,
+          slot: slot === "auto" ? null : Number(slot) }, this.t("saved"));
         s.modal = null; await this.refresh(); break;
       }
-      case "card-remove": await this.call("credential/set", { person: Number(d.p), digit: Number(d.d), card: null }); await this.refresh(); return;
+      case "card-remove": await this.call("credential/set", { person: Number(d.p), digit: Number(d.d), card: null, slot: Number(d.s ?? 0) }); await this.refresh(); return;
       case "code-edit": s.modal = { kind: "code", person: Number(d.p), digit: Number(d.d) }; break;
       case "code-save": {
         const m = s.modal; await this.call("credential/set", { person: m.person, digit: m.digit, code: this.val("code-val") }, this.t("saved"));
@@ -947,6 +953,12 @@ class ZkAccessPanel extends HTMLElement {
     }
     const cardIn = root.getElementById("card-no");
     if (cardIn) cardIn.addEventListener("input", () => { this._s.modal.cardInput = cardIn.value; });
+    // A card presented meanwhile re-renders the dialog: keep what was chosen.
+    for (const [id, key] of [["card-person", "person"], ["card-digit", "digit"], ["card-slot", "slot"]]) {
+      const sel = root.getElementById(id);
+      if (sel && sel.tagName === "SELECT") sel.addEventListener("change", () => {
+        if (this._s.modal) this._s.modal[key] = key === "slot" ? sel.value : Number(sel.value); });
+    }
   }
 
   renderHeader() {
@@ -974,18 +986,28 @@ class ZkAccessPanel extends HTMLElement {
     return e ? `${this.fmtTime(e.time)} · ${esc(e.category || this.t("method_" + e.method))}` : this.t("never");
   }
 
+  maxCards() { return this._s.state?.snapshot?.max_cards || 1; }
+
+  /** Card slots of a category (missing ones shown empty). */
+  cardSlots(c) {
+    const cards = c?.cards || (c ? [{ slot: 0, user_id: c.user_id, card: c.card }] : []);
+    return Array.from({ length: this.maxCards() }, (_, i) => cards.find((k) => k.slot === i) || { slot: i, card: null });
+  }
+
+  cardCount(c) { return (c?.cards || (c?.card ? [c] : [])).filter((k) => k.card).length; }
+
   renderPeople() {
     const snap = this._s.state?.snapshot || { persons: [], unassigned: [], counts: {} };
     const q = this._s.search.toLowerCase();
     const list = snap.persons.filter((p) => !q || (p.name || "").toLowerCase().includes(q) || String(p.num).includes(q));
     const rows = list.map((p) => {
       const cats = p.categories.map((c) => this.catPill(c.digit, `${this.catName(c.digit)} · ${c.fingers.length}`)).join(" ");
-      const card = p.categories.some((c) => c.card), code = p.categories.some((c) => c.has_code);
+      const card = p.categories.reduce((n, c) => n + this.cardCount(c), 0), code = p.categories.some((c) => c.has_code);
       return `<tr class="click" data-act="open-person" data-p="${p.num}">
         <td><div class="row"><span class="avatar" style="background:${this.color(p.num)}">${esc((p.name || "?")[0].toUpperCase())}</span>
           <div><b style="font-weight:500">${esc(p.name || this.t("person_no", { n: p.num }))}</b><div class="muted">${this.t("person_no", { n: p.num })}</div></div></div></td>
         ${this.plain() ? `<td>${p.categories[0]?.fingers.length || 0}</td>` : `<td><div class="row" style="gap:6px">${cats}</div></td>`}
-        <td>${card ? this.t("yes") : this.t("none")}</td><td>${code ? this.t("yes") : this.t("none")}</td>
+        <td>${card || this.t("none")}</td><td>${code ? this.t("yes") : this.t("none")}</td>
         <td class="muted">${this.lastOf(p.num)}</td>
         <td><span class="pill" style="background:${p.enabled ? "#e7f6ee" : "#f1f4f7"};color:${p.enabled ? "#067647" : "#52606d"}">${this.t(p.enabled ? "active" : "disabled")}</span></td></tr>`;
     }).join("");
@@ -1108,11 +1130,12 @@ class ZkAccessPanel extends HTMLElement {
       const uid = this.plain() ? p.num : p.num * 10 + Number(d);
       return { d: Number(d), c, uid };
     }).filter((r) => !this.plain() || r.d === 0);
+    const maxCards = this.maxCards();
     const creds = catRows.map(({ d, c, uid }) => `<div style="display:flex;flex-direction:column;gap:8px">
       ${this.plain() ? "" : `<span>${this.catPill(d, `${this.catName(d)} · ${uid}`)}</span>`}
-      <div class="cred"><span class="muted">${this.t("card")}</span><span class="mono val">${c?.card ? "#" + c.card : this.t("none")}</span>
-        <span class="btns"><button class="btn sm" data-act="learn-card" data-p="${p.num}" data-d="${d}">${c?.card ? this.t("replace") : this.t("learn_card")}</button>
-        ${c?.card ? `<button class="btn sm danger" data-act="card-remove" data-p="${p.num}" data-d="${d}">${this.t("remove")}</button>` : ""}</span></div>
+      ${this.cardSlots(c).map((k) => `<div class="cred"><span class="muted">${maxCards > 1 ? this.t("card_n", { n: k.slot + 1 }) : this.t("card")}${k.slot ? `<div class="mono" style="font-size:12px">${this.t("card_on_uid", { u: k.user_id ?? uid + 9000 })}</div>` : ""}</span><span class="mono val">${k.card ? "#" + k.card : this.t("none")}</span>
+        <span class="btns"><button class="btn sm" data-act="learn-card" data-p="${p.num}" data-d="${d}" data-s="${k.slot}">${k.card ? this.t("replace") : this.t("learn_card")}</button>
+        ${k.card ? `<button class="btn sm danger" data-act="card-remove" data-p="${p.num}" data-d="${d}" data-s="${k.slot}">${this.t("remove")}</button>` : ""}</span></div>`).join("")}
       <div class="cred"><span class="muted">${this.t("code")}</span><span class="val">${c?.has_code ? "••••" : this.t("none")}</span>
         <span class="btns"><button class="btn sm" data-act="code-edit" data-p="${p.num}" data-d="${d}">${c?.has_code ? this.t("change") : this.t("set_code")}</button>
         ${c?.has_code ? `<button class="btn sm danger" data-act="code-remove" data-p="${p.num}" data-d="${d}">${this.t("remove")}</button>` : ""}</span></div></div>`).join("");
@@ -1121,7 +1144,7 @@ class ZkAccessPanel extends HTMLElement {
       <th>${this.t("category")}</th><th>${this.t("user_id")}</th><th>${this.t("fingerprints_title")}</th><th>${this.t("card")}</th><th>${this.t("code")}</th><th>${this.t("relay")}</th><th>${this.t("cat_active")}</th></tr></thead><tbody>
       ${Object.keys(cats).map(Number).map((d) => { const c = p.categories.find((x) => x.digit === d);
         return `<tr class="${off.has(d) ? "off" : ""}"><td>${this.catPill(d, this.catName(d))}</td><td class="mono">${c ? c.user_id : "—"}</td><td>${c ? c.fingers.length : 0}</td>
-        <td>${c?.card ? this.t("yes") : this.t("none")}</td><td>${c?.has_code ? this.t("yes") : this.t("none")}</td>
+        <td>${this.cardCount(c) || this.t("none")}</td><td>${c?.has_code ? this.t("yes") : this.t("none")}</td>
         <td>${cats[String(d)]?.relay ? this.t("relay_yes") : this.t("relay_no")}</td>
         <td><label class="chk"><input type="checkbox" data-act="toggle-cat" data-p="${p.num}" data-d="${d}" ${off.has(d) ? "" : "checked"} ${p.enabled ? "" : "disabled"}></label></td></tr>`; }).join("")}</tbody></table></section>`;
     const people = Object.keys(this._hass.states).filter((e) => e.startsWith("person.")).sort();
@@ -1143,7 +1166,7 @@ class ZkAccessPanel extends HTMLElement {
           <label class="field">${this.t("ha_person")}<select id="id-ha"><option value="">${this.t("no_ha_person")}</option>
             ${people.map((e) => `<option value="${e}" ${e === p.ha_person ? "selected" : ""}>${esc(this._hass.states[e].attributes.friendly_name || e)}</option>`).join("")}</select></label>
           <div class="actions"><button class="btn primary" data-act="save-identity">${this.t("save")}</button></div></div></section>
-        <section class="card"><h2>${this.t("creds_title")}</h2><p class="sub">${this.t("creds_help")}</p><div class="list">${creds}</div></section>
+        <section class="card"><h2>${this.t("creds_title")}</h2><p class="sub">${this.t("creds_help", { n: maxCards })}</p>${maxCards > 1 ? `<p class="sub">${this.t("creds_help_extra")}</p>` : ""}<div class="list">${creds}</div></section>
         <section class="card"><h2>${this.t("phones")}</h2><p class="sub">${this.t("phones_help")}</p><div class="list">${(p.phones || []).map((ph) => `
           <div style="display:flex;flex-direction:column;gap:8px"><div class="row"><b style="font-weight:500;flex:1">${esc(ph.name)}</b>
             <label class="chk"><input type="checkbox" data-act="phone-enabled" data-dev="${esc(ph.device_id)}" ${ph.enabled !== false ? "checked" : ""}>${this.t("enabled_lbl")}</label></div>
@@ -1341,7 +1364,11 @@ class ZkAccessPanel extends HTMLElement {
         <div class="row"><label class="field" style="flex:1 1 200px">${this.t("person")}<select id="card-person">${persons.map((p) =>
           `<option value="${p.num}" ${p.num === m.person ? "selected" : ""}>${esc(p.name || p.num)} (${p.num})</option>`).join("")}</select></label>
           ${this.plain() ? `<input type="hidden" id="card-digit" value="0">` : `<label class="field" style="flex:1 1 140px">${this.t("category")}<select id="card-digit">${Object.keys(cats).map((d) =>
-            `<option value="${d}" ${Number(d) === m.digit ? "selected" : ""}>${esc(cats[d].name)}</option>`).join("")}</select></label>`}</div>
+            `<option value="${d}" ${Number(d) === m.digit ? "selected" : ""}>${esc(cats[d].name)}</option>`).join("")}</select></label>`}
+          ${this.maxCards() > 1 ? `<label class="field" style="flex:1 1 140px">${this.t("card_slot")}<select id="card-slot">
+            <option value="auto" ${m.slot === "auto" ? "selected" : ""}>${this.t("first_free")}</option>
+            ${Array.from({ length: this.maxCards() }, (_, i) => `<option value="${i}" ${String(m.slot) === String(i) ? "selected" : ""}>${this.t("card_n", { n: i + 1 })}</option>`).join("")}</select></label>`
+            : `<input type="hidden" id="card-slot" value="0">`}</div>
         <div class="actions"><button class="btn" data-act="close-modal">${this.t("cancel")}</button><button class="btn primary" data-act="card-save">${this.t("write_device")}</button></div>`;
     } else if (m.kind === "code") {
       inner = `<h2>${this.t("code_title", { c: esc(this.catName(m.digit)) })}</h2>
