@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.2 - 2026-11-24
 
 - Home Assistant integration, security: card numbers are no longer in the
   `zkaccess_native_access` event, in the attributes of the event entity (recorder history) nor
