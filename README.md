@@ -10,7 +10,7 @@ no ZKAccess.**
 [![PyPI](https://img.shields.io/pypi/v/pyzkaccess-native)](https://pypi.org/project/pyzkaccess-native/)
 [![Python](https://img.shields.io/pypi/pyversions/pyzkaccess-native)](https://pypi.org/project/pyzkaccess-native/)
 [![Tests](https://github.com/Avataar120/pyzkaccess/actions/workflows/ci.yml/badge.svg)](https://github.com/Avataar120/pyzkaccess/actions/workflows/ci.yml)
-[![HACS](https://img.shields.io/badge/HACS-custom-orange)](https://hacs.xyz/)
+[![Marketplace](https://img.shields.io/badge/Marketplace-default-41BDF5)](#install)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 ZKTeco panels and readers that are managed by **ZKAccess** (C3-100/200/400, inBio,
@@ -32,7 +32,7 @@ It comes with:
 |---|---|
 | 🐍 **Python library** | `pip install pyzkaccess-native` |
 | 💻 **Command line tool** | `zkaccess --host 192.168.1.201 users` |
-| 🏠 **Home Assistant integration** | installable from HACS, with a management page in the sidebar, see [below](#home-assistant-integration) |
+| 🏠 **Home Assistant integration** | installable from the Home Assistant Marketplace, with a management page in the sidebar, see [below](#home-assistant-integration) |
 | 🧪 **Device emulator** | test your code without hardware |
 | 📖 **Protocol documentation** | [docs/PROTOCOL.md](docs/PROTOCOL.md) |
 
@@ -323,22 +323,22 @@ $ zkaccess events
 
 ## Home Assistant integration
 
-The repository is also a **HACS** custom integration built on the library. It adds an
-**Access control** page to the sidebar (administrators only) to manage people, fingerprints,
-cards and codes without any YAML.
+The repository is also a custom integration built on the library, listed in the Home Assistant
+**Marketplace**. It adds an **Access control** page to the sidebar (administrators only) to
+manage people, fingerprints, cards and codes without any YAML.
 
 ### Install
 
-**With HACS** (recommended):
+**From the Marketplace** (recommended):
 
-1. In HACS, search for **ZKAccess Native**, open it and click **Download**.
+1. In Home Assistant, go to **Settings** → **Marketplace**, search for **ZKAccess Native**,
+   open it and click **Download**.
 2. Restart Home Assistant.
 
-If it does not show up in the search yet (before it is in the default HACS list): HACS → ⋮ →
-**Custom repositories** → add `https://github.com/Avataar120/pyzkaccess`, type
-**Integration**, then install **ZKAccess Native** as above.
+On older Home Assistant versions with HACS installed separately, search for it in HACS the
+same way.
 
-**By hand** (without HACS):
+**By hand** (without the Marketplace):
 
 1. Download the latest release from
    [Releases](https://github.com/Avataar120/pyzkaccess/releases/latest)
@@ -772,7 +772,8 @@ Please never attach real fingerprint templates, passwords or card numbers to an 
    `pyzkaccess-native==` requirement in `custom_components/zkaccess_native/manifest.json`.
 2. Update `CHANGELOG.md`, commit, then create a GitHub release with tag `vX.Y.Z`.
 3. The `Publish to PyPI` workflow builds and uploads the package (PyPI trusted
-   publishing, environment `pypi`; no token in the repository). HACS picks up the release.
+   publishing, environment `pypi`; no token in the repository). The Marketplace picks up
+   the release.
 
 ## Legal
 
